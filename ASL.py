@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import math
 
 import numpy as np
 
@@ -154,20 +155,27 @@ class ASL:
 
         return matching_frames
     
-    def compute_stokes(I):
+    def compute_stokes(self, I: np.ndarray) -> np.ndarray:
         """
         Compute the Stokes parameters from the raw polarimetric intensity data
         where I is a stack of intensity vectors [0, 45, 90, 135].
         """
 
-        # Initialize Stokes parameters array
-        S = np.zeros((I.shape[0], I.shape[1], 5))
+        # Initialize stokes array
+        H, W, _ = I.shape
+        S = np.zeros((H, W, 5), dtype=I.dtype)
 
-        S[:,:,1] = 0.5*sum(I, 3)
-        S[:,:,2] = I[:,:,1] - I[:,:,3]
-        S[:,:,3] = I[:,:,2] - I[:,:,4]
-        S[:,:,4] = sqrt( (S[:,:,2]/S[:,:,1]).^2 + (S(:,:,3)./S(:,:,1)).^2);
-        S[:,:,5] = 0.5*atan2(S(:,:,3),S(:,:,2));
+        S[:, :, 0] = 0.5 * np.sum(I, axis=2) # S0
+        S[:, :, 1] = I[:, :, 0] - I[:, :, 2] # S1
+        S[:, :, 2] = I[:, :, 1] - I[:, :, 3] # S2
+
+        # To avoid division by zero, add a small epsilon
+        epsilon = 1e-12
+        denom = S[:, :, 0] + epsilon
+        S[:, :, 3] = np.sqrt((S[:, :, 1] / denom)**2 + (S[:, :, 2] / denom)**2) # DoLP
+        S[:, :, 4] = 0.5 * np.arctan2(S[:, :, 2], S[:, :, 1]) # AoLP
+
+        return S
 
 
         
