@@ -8,6 +8,7 @@ from pathlib import Path
 from ASL import ASL
 import argparse
 import numpy as np
+import helper_functions as hf
 
 # Define constants
 MIN_INTENSITY = 1
@@ -23,7 +24,7 @@ def parse_args():
     parser.add_argument(
         "--aop_rotate",
         action="store_true",
-        help="Get Stokes parameters for each frame.",
+        help="Perform aop rotations on each frame.",
     )
     parser.add_argument(
         "--log_scale",
@@ -39,6 +40,11 @@ def parse_args():
         "--min_max",
         action="store_true",
         help="Apply min-max normalization to s0.",
+    )
+    parser.add_argument(
+        "--hist_shift",
+        action="store_true",
+        help="Apply histogram shifting to s0.",
     )
     return parser.parse_args()
 
@@ -71,11 +77,11 @@ def process_dataset(asl_dir):
                 # Assuming min = 1, max = 4094.0
                 if args.raw_scale:
                     raw_norm = (frame_data - MIN_INTENSITY) / (MAX_INTENSITY - MIN_INTENSITY + 1e-8)
-                    stokes = c_hdr.compute_stokes(raw_norm)
+                    stokes = hf.compute_stokes(raw_norm)
                 else:
 
                     # Compute Stokes parameters for each frame
-                    stokes = c_hdr.compute_stokes(frame_data)
+                    stokes = hf.compute_stokes(frame_data)
 
                 s0 = stokes[:, :, 0]
                 s1 = stokes[:, :, 1]
@@ -109,6 +115,13 @@ def process_dataset(asl_dir):
                 print(f"Normalized s0: {s0_norm}")
                 print(f"Normalized DoLP: {dolp_norm}")
                 print(f"Normalized AoP: {aop_norm}")
+
+                if args.aop_rotate:
+                    
+
+                    # Rotate the frame data by the AoP
+                    rotated_frame = c_hdr.rotate_frame(frame_data, aop)
+                    print(f"Rotated frame at azimuth {azimuth}, index {frame_idx}")
 
 
 
