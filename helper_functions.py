@@ -13,6 +13,8 @@ import numpy as np
 from scipy.ndimage import binary_dilation
 from scipy.signal import convolve2d
 from scipy.ndimage import gaussian_filter
+import matplotlib.pyplot as plt
+import ASL
 
 def disk_structure(radius):
     """Create a disk-shaped structuring element."""
@@ -22,23 +24,84 @@ def disk_structure(radius):
     selem = (X - center)**2 + (Y - center)**2 <= radius**2
     return selem
 
+def compute_periodic_aop(aop: np.ndarray, plot_mapping=False) -> np.ndarray:
+    """
+    This fn. takes a set of AoP images and applies a periodic mapping to remove display discontinuities.
+    NOTE: This is a conversion of the MATLAB function of the same name.
+    """
+    # Parameters
+    ph = -3 * np.pi / 4
 
-def enhancedDoLP(S: np.ndarray) -> np.ndarray:
+    # Mapping function
+    paop = np.cos(2*aop + ph) + np.sin(2*aop + ph)
+
+    if plot_mapping:
+        # Define theta values
+        th = np.linspace(-np.pi/2, np.pi/2, 1000)
+
+        # Plot
+        plt.figure(figsize=(7, 5))
+        plt.plot(th, paop, label=r'$\cos(2\theta - \tfrac{3\pi}{4}) + \sin(2\theta - \tfrac{3\pi}{4})$')
+        plt.xlabel(r'$\theta$', fontsize=12)
+        plt.ylabel(r'$\cos(2\theta - \tfrac{3\pi}{4}) + \sin(2\theta - \tfrac{3\pi}{4})$', fontsize=12)
+        plt.title('AoP Periodic Mapping Function', fontsize=14)
+        plt.axis([-np.pi/2, np.pi/2, -np.sqrt(2), np.sqrt(2)])
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.legend()
+        plt.show()
+    
+    return paop
+
+def circshift_aop_histmax(aop: np.ndarray, valid_pixels=None) -> np.ndarray:
+
+    # If not given, assume all pixels are valid
+    if valid_pixels is None:
+        validPixelMask = np.ones_like(aop, dtype=int)
+        
+    idx = validPixelMask == 1
+
+    v = np.linspace(-np.pi/2, np.pi/2, 180)
+
+    # Histogram (counts and bin edges)
+    N, edges = np.histogram(aop[idx], bins=v)
+
+    # Bin centers
+    b = 0.5 * (edges[:-1] + edges[1:])
+
+    # Shift = center of most populated bin
+    shift = b[np.argmax(N)]
+
+    # Shift AoP
+    aop_shifted = aop - shift
+
+    if shift > 0:
+        # Wrap values that go below -π/2
+        wrap_idx = np.where(aop - shift < -np.pi/2)[0]
+        aop_shifted[wrap_idx] = aop[wrap_idx] + np.pi - shift
+    else:
+        # Wrap values that go above +π/2
+        wrap_idx = np.where(aop - shift > np.pi/2)[0]
+        aop_shifted[wrap_idx] = aop[wrap_idx] - np.pi - shift
+
+    return aop_shifted
+
+
+def compute_enhanced_dolp(S: np.ndarray) -> np.ndarray:
     """
     Compute the enhanced Degree of Linear Polarization (DoLP) from Stokes parameters.
     NOTE: This function is a conversion of the MATLAB function of the same name.
     """
     #Compute enhanced DoLP
-    DoLP = S[:,:,4]
-    uDoLP = np.sqrt(S[:,:,2]**2 + S[:,:,3]**2)
-    uDoLP = uDoLP - min(uDoLP[:])
-    dolpmu = np.mean(DoLP)
-    udolpmu = np.mean(uDoLP)
+    dolp = S[:,:,4]
+    udolp = np.sqrt(S[:,:,2]**2 + S[:,:,3]**2)
+    udolp = udolp - min(udolp[:])
+    dolpmu = np.mean(dolp)
+    udolpmu = np.mean(udolp)
 
-    eDoLP = np.max(S[:,:,4], uDoLP*(1.1*dolpmu/udolpmu))
-    eDoLP = eDoLP - np.min(eDoLP[:])
+    edolp = np.max(S[:,:,4], udolp*(1.1*dolpmu/udolpmu))
+    edolp = edolp - np.min(edolp[:])
 
-    return eDoLP
+    return edolp
 
 def compute_stokes(I: np.ndarray) -> np.ndarray:
     """
@@ -62,7 +125,7 @@ def compute_stokes(I: np.ndarray) -> np.ndarray:
 
     return S
 
-def computeSAoPC(aop: np.ndarray, msize: int, method: float) -> np.ndarray:
+def compute_saopc(aop: np.ndarray, msize: int, method: float) -> np.ndarray:
     """
     Compute the SAoPC (Spatially Adaptive Orientation of Polarization Coherence) from enhanced AoP.
     aop: AoP array
@@ -143,7 +206,7 @@ def imgscale(img, scaling_a = None, scaling_b = None):
 
     img = np.asarray(img, dtype=float)  # convert to double
     M, N = img.shape[:2]
-    Z = 1 if img.ndim == 2 else img.shape[2]
+    #Z = 1 if img.ndim == 2 else img.shape[2]
 
     # Min-Max Scaling
     if scaling_a is None and scaling_b is None:
@@ -173,14 +236,13 @@ def imgscale(img, scaling_a = None, scaling_b = None):
 
     return out, alpha_l, alpha_h
     
-    
 
-def compute_enhanceds0(S, s0std, dolpMax, aopMax, fusionCoefficient,
-                    validPixels, hdr, aopMode):
+def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
+                    valid_pixels, hdr, aop_mode):
     """
     Scale s0 and denoise s1/s2, compute updated Stokes + derivative products.
     S is a Stokes array of shape (H, W, 5).
-    aopMode: 1 = geometric rotation, 2 = histogram shifting.
+    aop_mode: 1 = geometric rotation, 2 = histogram shifting.
     NOTE: This function is a conversion of the MATLAB function of the same name.
     """
 
@@ -200,7 +262,6 @@ def compute_enhanceds0(S, s0std, dolpMax, aopMax, fusionCoefficient,
     # Intensity range (for sigma_color scaling)
     S_min, S_max = S.min(), S.max()
     intensity_range = S_max - S_min
-
 
     # For all frames
     for k in range(num_frames):
@@ -227,29 +288,29 @@ def compute_enhanceds0(S, s0std, dolpMax, aopMax, fusionCoefficient,
                             (SS[:, :, 2] / SS[:, :, 0])**2)
         SS[:, :, 4] = 0.5 * np.arctan2(SS[:, :, 2], SS[:, :, 1])
 
-        edolp = enhancedDoLP(S)
-        if aopMode == 1:
-            eaop = rotateAoP(SS[:, :, 1], SS[:, :, 2], hdr, k)  # TODO: implement
-        elif aopMode == 2:
-            eaop = circshiftAoPHistMax(SS[:, :, 4], validPixels)  # TODO: implement
+        edolp = compute_enhanced_dolp(S)
+        if aop_mode == 1:
+            eaop = hdr.rotate_aop(SS[:, :, 1], SS[:, :, 2], hdr, k)
+        elif aop_mode == 2:
+            eaop = circshift_aop_histmax(SS[:, :, 4], valid_pixels)  
         else:
-            raise ValueError("Invalid aopMode. Use 1 or 2.")
+            raise ValueError("Invalid aop_mode. Use 1 or 2.")
 
-        saopc = computeSAoPC(eaop, 3, 0)
+        saopc = compute_saopc(eaop, 3, 0)
 
-        s0 = imgscale(SS[:, :, 0], s0std)
-        aopmap = imgscale(periodicAoP(eaop), -np.sqrt(2), np.sqrt(2))  # TODO: implement
-        dolpmap = imgscale(edolp, 0, dolpMax)
+        es0 = imgscale(SS[:, :, 0], s0std)
+        aopmap = imgscale(compute_periodic_aop(eaop), -np.sqrt(2), np.sqrt(2))
+        dolpmap = imgscale(edolp, 0, dolp_max)
 
-        mixture1 = imgscale(imgscale(fusionCoefficient * s0 +
-                        (1 - fusionCoefficient) * np.maximum(s0, dolpmap)) ** (1 - dolpmap))
-        mixture2 = imgscale(imgscale(fusionCoefficient * s0 +
-                        (1 - fusionCoefficient) * np.maximum(s0,
-                        np.maximum(dolpmap, aopMax * aopmap))) **
-                        (1 - np.maximum(dolpmap, aopMax * aopmap)))
+        mixture1 = imgscale(imgscale(fusion_coefficient, * es0 +
+                        (1 - fusion_coefficient,) * np.maximum(es0, dolpmap)) ** (1 - dolpmap))
+        mixture2 = imgscale(imgscale(fusion_coefficient, * es0 +
+                        (1 - fusion_coefficient,) * np.maximum(es0,
+                        np.maximum(dolpmap, aop_max * aopmap))) **
+                        (1 - np.maximum(dolpmap, aop_max * aopmap)))
 
-        s0e1[:, :, k] = ((1 - saopc) * s0 + saopc * mixture1) * validPixels
-        s0e2[:, :, k] = ((1 - saopc) * s0 + saopc * mixture2) * validPixels
+        s0e1[:, :, k] = ((1 - saopc) * es0 + saopc * mixture1) * valid_pixels
+        s0e2[:, :, k] = ((1 - saopc) * es0 + saopc * mixture2) * valid_pixels
 
-    return s0, s0e1, s0e2
+    return es0, s0e1, s0e2
 

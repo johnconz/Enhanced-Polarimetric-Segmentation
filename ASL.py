@@ -128,6 +128,119 @@ class ASL:
 
         return data, partial, hdr
     
+    def rotate_aop(self, s1: np.ndarray, s2: np.ndarray, k: int) -> np.ndarray:
+        """
+        Rotate the AoP based on the Stokes parameters s1 and s2.
+        hdr: header information containing rotation angles.
+        k: index of the current frame.
+        NOTE: This function is a conversion of the MATLAB function of the same name.
+        """
+
+        hdr = self.get_header()
+
+        # Convert degrees to radians
+        solaz = np.deg2rad(hdr.frame_metadata[k].solar_azimuth)
+        solel = np.deg2rad(hdr.frame_metadata[k].solar_elevation)
+        senaz = np.deg2rad(hdr.frame_metadata[0].sensor_azimuth)   # index 1 in MATLAB → 0 in Python
+        senel = np.deg2rad(hdr.frame_metadata[0].sensor_elevation)
+
+        # Solar pointing vector
+        Usol = np.array([
+            np.cos(solel) * np.cos(solaz),
+            np.cos(solel) * np.sin(solaz),
+            np.sin(solel)
+        ])
+
+        # Sensor pointing vector
+        Usen = np.array([
+            np.cos(senel) * np.cos(senaz),
+            np.cos(senel) * np.sin(senaz),
+            np.sin(senel)
+        ])
+
+        # Scattering plane normal
+        cross_prod = np.cross(Usen, Usol)
+        n = cross_prod / np.linalg.norm(cross_prod)
+
+        # Angle between sensor and scattering plane normal
+        alpha = np.arccos(np.dot(Usen, n))
+
+        # Rotate s1 and s2, then compute AoP
+        s1r = np.cos(2 * alpha) * s1 + np.sin(2 * alpha) * s2
+        s2r = -np.sin(2 * alpha) * s1 + np.cos(2 * alpha) * s2
+        eaop = 0.5 * np.arctan2(s2r, s1r)
+
+        return eaop
+    
+    def relabel_mask_by_class_name_map(self, class_map, zero_out_umatched=True):
+        """
+        Relabel mask with unified class IDs based on classMap.
+
+        Parameters
+        ----------
+        classMap : dict
+            Keys = substrings (case-insensitive), values = new class IDs
+        zero_out_umatched: : bool, default=True
+            Whether to set unmatched pixels to 0
+
+        Returns
+        -------
+        relabeled_mask : np.ndarray
+            Relabeled mask with unified class IDs
+        valid_pixels : np.ndarray (bool)
+            Boolean mask of pixels belonging to new classes (excluding background)
+        """
+        # Read header + data in
+        hdr = self.get_header()
+        masks, _, _ = self.get_data()
+
+        # Initialize output arrays
+        relabeled_masks = np.zeros_like(masks, dtype=np.uint8)
+        valid_pixels = np.zeros_like(masks, dtype=bool)
+
+        num_frames = masks.shape[2]
+
+        # Loop through each turntable azimuth position's mask
+        #scene_ids = hdr.frame_metadata.params.get("scene id")
+        for turntable_pos in range(num_frames):
+            masks_frame = masks[:, :, turntable_pos]
+            relabeled_mask = np.zeros_like(masks_frame, dtype=np.uint8)
+            matched_mask = np.zeros_like(masks_frame, dtype=bool)
+
+            # To avoid type errors
+            object_names = hdr.frame_metadata[turntable_pos].params.get("object class name")
+            object_ids = hdr.frame_metadata[turntable_pos].params.get("object id number")
+
+            # Loop through class names
+            for name, class_id in zip(object_names, object_ids):
+                name = str(name).lower()
+                #print(f"Processing class name: {name}, ID: {class_id}")
+
+                # Skip null or background classes
+                if "null" in name or "background" in name:
+                    continue
+
+                # Check substrings in class map
+                for key, new_id in class_map.items():
+                    if key.lower() in name:
+
+                        # Find indices where mask equals class_id
+                        indices = np.where(masks_frame == class_id)
+                        relabeled_mask[indices] = new_id
+                        matched_mask[indices] = True
+                        break  # first match wins
+
+            if not zero_out_umatched:
+                # Preserve unmatched labels
+                unmatched_indices = ~matched_mask
+                relabeled_mask[unmatched_indices] = masks_frame[unmatched_indices]
+
+
+            relabeled_masks[:, :, turntable_pos] = relabeled_mask
+            valid_pixels[:, :, turntable_pos] = relabeled_mask != 0
+
+        return relabeled_masks, valid_pixels
+    
     # NOTE: Kinda obsolete, but kept for compatibility
     def get_frames_for_turntable_pos(self, turntable_pos: Union[int, str]) -> List[int]:
         """

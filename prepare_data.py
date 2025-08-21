@@ -13,6 +13,13 @@ import helper_functions as hf
 # Define constants
 MIN_INTENSITY = 1
 MAX_INTENSITY = 4094.0
+COMPUTE_ENHANCED = False  # Flag for enhanced DoLP/AoP computation
+
+# For computing enhanced Stokes parameters
+S0_STD = 3
+DOLP_MAX = 1.0
+AOP_MAX = 0.5
+FUSION_COEFFICIENT = 0.5
 
 # Path to ASL data dir
 files = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
@@ -116,12 +123,20 @@ def process_dataset(asl_dir):
                 print(f"Normalized DoLP: {dolp_norm}")
                 print(f"Normalized AoP: {aop_norm}")
 
-                if args.aop_rotate:
-                    
+                # Check if computing custom parameters
+                if args.hist_shift or args.aop_rotate:
+                    COMPUTE_ENHANCED = True
 
-                    # Rotate the frame data by the AoP
-                    rotated_frame = c_hdr.rotate_frame(frame_data, aop)
-                    print(f"Rotated frame at azimuth {azimuth}, index {frame_idx}")
+                    if args.hist_shift:
+                        aop_mode = 2
+                    if args.aop_rotate:
+                        aop_mode = 1
+
+                if COMPUTE_ENHANCED:
+                    
+                    # Compute enhanced parameters
+                    es0, s0e1, s0e2 = hf.compute_enhanceds0(stokes, S0_STD, DOLP_MAX, AOP_MAX, FUSION_COEFFICIENT, valid_pixels, c_hdr, aop_mode)
+
 
 
 
