@@ -11,6 +11,8 @@ from skimage.restoration import denoise_bilateral # for 'imbilatfilt" MATLAB equ
 from skimage import data
 import numpy as np
 from scipy.ndimage import binary_dilation
+from scipy.signal import convolve2d
+from scipy.ndimage import gaussian_filter
 
 def disk_structure(radius):
     """Create a disk-shaped structuring element."""
@@ -21,7 +23,7 @@ def disk_structure(radius):
     return selem
 
 
-def enhancedDoLP(self, S: np.ndarray) -> np.ndarray:
+def enhancedDoLP(S: np.ndarray) -> np.ndarray:
     """
     Compute the enhanced Degree of Linear Polarization (DoLP) from Stokes parameters.
     NOTE: This function is a conversion of the MATLAB function of the same name.
@@ -38,7 +40,7 @@ def enhancedDoLP(self, S: np.ndarray) -> np.ndarray:
 
     return eDoLP
 
-def compute_stokes(self, I: np.ndarray) -> np.ndarray:
+def compute_stokes(I: np.ndarray) -> np.ndarray:
     """
     Compute the Stokes parameters from the raw polarimetric intensity data
     where I is a stack of intensity vectors [0, 45, 90, 135].
@@ -60,7 +62,7 @@ def compute_stokes(self, I: np.ndarray) -> np.ndarray:
 
     return S
 
-def computeSAoPC(self, aop: np.ndarray, msize: int, method: float) -> np.ndarray:
+def computeSAoPC(aop: np.ndarray, msize: int, method: float) -> np.ndarray:
     """
     Compute the SAoPC (Spatially Adaptive Orientation of Polarization Coherence) from enhanced AoP.
     aop: AoP array
@@ -77,32 +79,103 @@ def computeSAoPC(self, aop: np.ndarray, msize: int, method: float) -> np.ndarray
     if(np.mod(msize, 2) == 0): 
         msize = msize + 1 #Make odd if even
     radius = (msize - 1) / 2 + 1 
-    selem = disk_structure(radius) # Create a disk-shaped structuring element
-    mask = se.Neighborhood
-    if(msize==3)
-        mask = ones(3);
-    elseif(msize==5) %Remove corners as a special case
-        mask(1,1) = 0;
-        mask(1,5) = 0;
-        mask(5,1) = 0;
-        mask(5,5) = 0;
-    end
+    selem = disk_structure(radius) # Create a disk-shaped structuring element (as np array)
+    mask = selem.copy()
+    if msize == 3:
+        mask = np.ones((3, 3), dtype=float)
 
-    %Apply Gaussian weights to neighborhood if enabled
-    if(method==1)    
-        G = fspecial('gaussian',msize,1+msize/2);
-        mask = G.*mask;
-    end
+    # Remove corners as a special case
+    elif msize == 5: 
+        mask[0, 0] = 0
+        mask[0, -1] = 0
+        mask[-1, 0] = 0
+        mask[-1, -1] = 0
 
-    mask = mask./sum(mask(:));
-    cam = imfilter(ca,mask,'symmetric');
-    sam = imfilter(sa,mask,'symmetric');
-    pcm = real(sqrt( cam.^2 + sam.^2));
+    # Apply Gaussian weights to neighborhood if enabled
+    if method == 1:
 
-    %Check PCM for NaN's and remove
-    pcm(isnan(pcm(:))) = 0;
+        # Gaussian kernel with stddev ~ (1 + msize / 2), same as fspecial    
+        g = gaussian_filter(np.zeros((msize, msize)), sigma = 1 + msize / 2)
 
-def compute_enhanceds0(self, S, s0std, dolpMax, aopMax, fusionCoefficient,
+        # Apply impulse
+        g[msize // 2, msize // 2] = 1
+        G = gaussian_filter(g, sigma = 1 + msize / 2)
+        mask = G * mask
+
+    # Normalize mask
+    mask = mask / mask.sum()
+
+    # Apply filtering
+    cam = convolve2d(ca, mask, 'symmetric')
+    sam = convolve2d(sa, mask, 'symmetric')
+    pcm = np.real(np.sqrt(cam**2 + sam**2))
+
+    # Check PCM for NaN's and remove
+    pcm[np.isnan(pcm)] = 0
+
+    return pcm
+
+def imgscale(img, scaling_a = None, scaling_b = None):
+    """
+    Scale a given image based on certain input parameters.
+
+    Inputs
+    -------
+    scaling_a:
+    - if None, min-max scale
+    - if given & scaling_b are None, interpreted as standard deviation multiplier for statistical scaling.
+    - if given & scaling is also given, interpreted as lower bound for absolute scaling.
+
+    scaling_b:
+    - upper bound for absolute scaling
+
+    Returns
+    -------
+    out:
+    - ndarray, scaled image in range [0, 1], dtype=float64.
+    
+    alpha_l:
+    - lower bound used for scaling.
+    
+    alpha_h:
+    - upper bound used for scaling.
+    """
+
+    img = np.asarray(img, dtype=float)  # convert to double
+    M, N = img.shape[:2]
+    Z = 1 if img.ndim == 2 else img.shape[2]
+
+    # Min-Max Scaling
+    if scaling_a is None and scaling_b is None:
+        alpha_l = np.min(img)
+        alpha_h = np.max(img)
+
+    # Statistical Scaling
+    elif scaling_a is not None and scaling_b is None:
+        mu = np.mean(img)
+        sd = np.std(img)
+        alpha_l = mu - scaling_a * sd
+        alpha_h = mu + scaling_a * sd
+
+    # Absolute Scaling
+    elif scaling_a is not None and scaling_b is not None:
+        alpha_l = scaling_a
+        alpha_h = scaling_b
+
+    else:
+        raise ValueError("Invalid parameter combination for imgscale.")
+
+    # Saturate values
+    img = np.clip(img, alpha_l, alpha_h)
+
+    # Linear scaling to [0,1]
+    out = (img - alpha_l) / (alpha_h - alpha_l)
+
+    return out, alpha_l, alpha_h
+    
+    
+
+def compute_enhanceds0(S, s0std, dolpMax, aopMax, fusionCoefficient,
                     validPixels, hdr, aopMode):
     """
     Scale s0 and denoise s1/s2, compute updated Stokes + derivative products.
@@ -154,7 +227,7 @@ def compute_enhanceds0(self, S, s0std, dolpMax, aopMax, fusionCoefficient,
                             (SS[:, :, 2] / SS[:, :, 0])**2)
         SS[:, :, 4] = 0.5 * np.arctan2(SS[:, :, 2], SS[:, :, 1])
 
-        edolp = ASL.enhancedDoLP(S)
+        edolp = enhancedDoLP(S)
         if aopMode == 1:
             eaop = rotateAoP(SS[:, :, 1], SS[:, :, 2], hdr, k)  # TODO: implement
         elif aopMode == 2:
@@ -162,9 +235,9 @@ def compute_enhanceds0(self, S, s0std, dolpMax, aopMax, fusionCoefficient,
         else:
             raise ValueError("Invalid aopMode. Use 1 or 2.")
 
-        saopc = computeSAoPC(eaop, 3, 0)  # TODO: implement
+        saopc = computeSAoPC(eaop, 3, 0)
 
-        s0 = imgscale(SS[:, :, 0], s0std)  # TODO: implement
+        s0 = imgscale(SS[:, :, 0], s0std)
         aopmap = imgscale(periodicAoP(eaop), -np.sqrt(2), np.sqrt(2))  # TODO: implement
         dolpmap = imgscale(edolp, 0, dolpMax)
 
