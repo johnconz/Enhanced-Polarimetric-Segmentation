@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import os
 
-MASK_VISUALIZE = True
+MASK_VISUALIZE = False
 OUTPUT_DIR = Path('/home/connor/Thesis/updated_masks')
 
 CLASS_MAP = {
@@ -63,14 +63,9 @@ if __name__ == "__main__":
 
         hdr = ASL(file)
 
-        relabeled_masks, valid_pixels = hdr.relabel_mask_by_class_name_map(class_map=CLASS_MAP)
-        print(f"Relabeled masks: {relabeled_masks}")
+        frame_data, _, _ = hdr.get_data()
 
-        plt.figure(figsize=(10, 7))
-        plt.imshow(relabeled_masks[:, :, 0], cmap="nipy_spectral")
-        plt.axis(False)
-        plt.show()
-        
+        relabeled_masks, valid_pixels = hdr.relabel_mask_by_class_name_map(class_map=CLASS_MAP)
 
         # Visualize one relabeled mask
         if MASK_VISUALIZE:
@@ -79,8 +74,9 @@ if __name__ == "__main__":
             exit()
             MASK_VISUALIZE = False  # Only visualize the first mask
 
-        # Save relabeled mask as .npy file
-        np.savez(os.path.join(OUTPUT_DIR, f'{file}.npy'), relabeled_masks=relabeled_masks, valid_pixels=valid_pixels)
+        #print("Directory exists:", os.path.exists(OUTPUT_DIR))
+        print(f"Saving {file.name[:28]} to: ", OUTPUT_DIR)
+        np.savez(os.path.join(OUTPUT_DIR, f'{file.name[:28]}.npz'), relabeled_masks=relabeled_masks, valid_pixels=valid_pixels.astype(int))
 
 
 

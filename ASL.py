@@ -113,7 +113,7 @@ class ASL:
                         block = np.fromfile(f, count=width * height, dtype=dtype)
                         if block.size != width * height:
                             raise IOError("Unexpected EOF while reading data.")
-                        data[:, :, idx] = block.reshape((width, height)).T
+                        data[:, :, idx] = block.reshape((height, width))
                         idx += 1
 
         # Build partial header
@@ -172,7 +172,7 @@ class ASL:
 
         return eaop
     
-    def relabel_mask_by_class_name_map(self, class_map, zero_out_umatched=True):
+    def relabel_mask_by_class_name_map(self, class_map, zero_out_unmatched=True):
         """
         Relabel mask with unified class IDs based on classMap.
 
@@ -230,7 +230,7 @@ class ASL:
                         matched_mask[indices] = True
                         break  # first match wins
 
-            if not zero_out_umatched:
+            if not zero_out_unmatched:
                 # Preserve unmatched labels
                 unmatched_indices = ~matched_mask
                 relabeled_mask[unmatched_indices] = masks_frame[unmatched_indices]

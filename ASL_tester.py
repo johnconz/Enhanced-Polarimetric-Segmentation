@@ -6,6 +6,7 @@
 
 from pathlib import Path
 from ASL import ASL
+import matplotlib.pyplot as plt
 
 
 """
@@ -19,6 +20,13 @@ print('Printing data: ')
 print(data)
 print('Printing data shape: ')
 print(data.shape)
+
+# Visualize a frame
+plt.figure(figsize=(10, 7))
+plt.imshow(data[:, :, 2], cmap="gray")
+plt.axis(False)
+plt.show()
+
 
 # ----------------------------------------------------------------------->
 # Additional Functionality Testing
