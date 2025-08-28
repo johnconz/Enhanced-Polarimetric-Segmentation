@@ -246,9 +246,11 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
     NOTE: This function is a conversion of the MATLAB function of the same name.
     """
 
+    print(S.ndim)
+    print(S)
     # Shape check
     if S.ndim != 4:
-        raise ValueError(f"S must be 4D (H, W, 5, num_frames), got {S.ndim}D")
+        raise ValueError(f"S must be 3D (H, W, 5 num_frames), got {S.ndim}D")
     H, W, C, num_frames = S.shape
     if C != 5:
         raise ValueError(f"Third dimension of S must be 5 (s0, s1, s2, dolp, aop), got {C}")

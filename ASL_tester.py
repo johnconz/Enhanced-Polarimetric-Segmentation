@@ -41,7 +41,7 @@ GET ALL FRAMES FOR A TURNTABLE POSITION
 """
 
 # Utilizes 'turntable device azimuth' metadata (in degrees).
-pos_1_frames = x.get_frames_for_turntable_pos(-180)
+pos_1_frames = x.get_frames_for_turntable_pos(135)
 print("Frames with turntable pos 1:", pos_1_frames)
 
 # Just load those frames
