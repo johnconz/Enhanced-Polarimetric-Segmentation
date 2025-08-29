@@ -94,11 +94,11 @@ def compute_enhanced_dolp(S: np.ndarray) -> np.ndarray:
     #Compute enhanced DoLP
     dolp = S[:,:,4]
     udolp = np.sqrt(S[:,:,2]**2 + S[:,:,3]**2)
-    udolp = udolp - min(udolp[:])
+    udolp = udolp - np.min(udolp[:])
     dolpmu = np.mean(dolp)
     udolpmu = np.mean(udolp)
 
-    edolp = np.max(S[:,:,4], udolp*(1.1*dolpmu/udolpmu))
+    edolp = np.maximum(S[:,:,4], udolp*(1.1*dolpmu/udolpmu))
     edolp = edolp - np.min(edolp[:])
 
     return edolp
@@ -169,8 +169,8 @@ def compute_saopc(aop: np.ndarray, msize: int, method: float) -> np.ndarray:
     mask = mask / mask.sum()
 
     # Apply filtering
-    cam = convolve2d(ca, mask, 'symmetric')
-    sam = convolve2d(sa, mask, 'symmetric')
+    cam = convolve2d(ca, mask, mode='same', boundary='symm')
+    sam = convolve2d(sa, mask, mode='same', boundary='symm')
     pcm = np.real(np.sqrt(cam**2 + sam**2))
 
     # Check PCM for NaN's and remove
@@ -246,9 +246,9 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
     NOTE: This function is a conversion of the MATLAB function of the same name.
     """
 
-    print(S.ndim)
-    print(S)
-    # Shape check
+    # For handling only one frame
+    if S.ndim == 3:
+        S = S[:, :, :, np.newaxis]
     if S.ndim != 4:
         raise ValueError(f"S must be 3D (H, W, 5 num_frames), got {S.ndim}D")
     H, W, C, num_frames = S.shape
@@ -262,8 +262,9 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
     s0e2 = np.zeros((H, W, num_frames), dtype=np.float64)
 
     # Intensity range (for sigma_color scaling)
-    S_min, S_max = S.min(), S.max()
-    intensity_range = S_max - S_min
+    # (ONLY NEEDED FOR NORMALIZATION)
+    #S_min, S_max = S.min(), S.max()
+    #ntensity_range = S_max - S_min
 
     # For all frames
     for k in range(num_frames):
@@ -273,15 +274,17 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
         # MATLAB imbilatfilt replacement
         SS[:, :, 1] = denoise_bilateral(
             S[:, :, 1, k].astype(np.float64),
-            sigma_color=100 / intensity_range,  # scale to match MATLAB DegreeOfSmoothing
-            sigma_spatial=5,                    # adjust to match MATLAB SpatialSigma
+            #sigma_color=100 / intensity_range,  # scale to match MATLAB DegreeOfSmoothing
+            sigma_color=100,
+            sigma_spatial=2,                    # adjust to match MATLAB SpatialSigma
             channel_axis=None
         )
 
         SS[:, :, 2] = denoise_bilateral(
             S[:, :, 2, k].astype(np.float64),
-            sigma_color=100 / intensity_range,
-            sigma_spatial=5,
+            #sigma_color=100 / intensity_range,
+            sigma_color=100,
+            sigma_spatial=2,
             channel_axis=None
         )
 
@@ -292,7 +295,7 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
 
         edolp = compute_enhanced_dolp(S)
         if aop_mode == 1:
-            eaop = hdr.rotate_aop(SS[:, :, 1], SS[:, :, 2], hdr, k)
+            eaop = hdr.rotate_aop(SS[:, :, 1], SS[:, :, 2], k)
         elif aop_mode == 2:
             eaop = circshift_aop_histmax(SS[:, :, 4], valid_pixels)  
         else:
@@ -300,19 +303,24 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
 
         saopc = compute_saopc(eaop, 3, 0)
 
-        es0 = imgscale(SS[:, :, 0], s0std)
-        aopmap = imgscale(compute_periodic_aop(eaop), -np.sqrt(2), np.sqrt(2))
-        dolpmap = imgscale(edolp, 0, dolp_max)
+        es0 = imgscale(SS[:, :, 0], s0std)[0].squeeze()
+        aopmap = imgscale(compute_periodic_aop(eaop), -np.sqrt(2), np.sqrt(2))[0].squeeze()
+        dolpmap = imgscale(edolp, 0, dolp_max)[0].squeeze()
 
-        mixture1 = imgscale(imgscale(fusion_coefficient, * es0 +
-                        (1 - fusion_coefficient,) * np.maximum(es0, dolpmap)) ** (1 - dolpmap))
-        mixture2 = imgscale(imgscale(fusion_coefficient, * es0 +
-                        (1 - fusion_coefficient,) * np.maximum(es0,
-                        np.maximum(dolpmap, aop_max * aopmap))) **
-                        (1 - np.maximum(dolpmap, aop_max * aopmap)))
+        # mixture1: scale → exponentiate → scale again
+        mixture1 = fusion_coefficient * es0 + (1 - fusion_coefficient) * np.maximum(es0, dolpmap)
+        mixture1 = imgscale(mixture1 ** (1 - dolpmap))[0].squeeze()
+
+        # mixture2: same logic
+        mixture2 = fusion_coefficient * es0 + (1 - fusion_coefficient) * np.maximum(
+            es0, np.maximum(dolpmap, aop_max * aopmap)
+        )
+        mixture2 = imgscale(mixture2 ** (1 - np.maximum(dolpmap, aop_max * aopmap)))[0].squeeze()
 
         s0e1[:, :, k] = ((1 - saopc) * es0 + saopc * mixture1) * valid_pixels
         s0e2[:, :, k] = ((1 - saopc) * es0 + saopc * mixture2) * valid_pixels
 
     return es0, s0e1, s0e2
+
+
 

@@ -180,10 +180,10 @@ if __name__ == "__main__":
     if args.hist_shift:
         # Bool to track whether to compute enhanced param.
         compute_enhanced = True
-        aop_mode = 1
+        aop_mode = 2
 
     if args.aop_rotate:
         compute_enhanced = True
-        aop_mode = 2
+        aop_mode = 1
 
     process_dataset(data_dir, mask_dir, aop_mode, compute_enhanced)

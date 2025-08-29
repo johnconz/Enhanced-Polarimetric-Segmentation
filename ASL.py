@@ -139,10 +139,10 @@ class ASL:
         hdr = self.get_header()
 
         # Convert degrees to radians
-        solaz = np.deg2rad(hdr.frame_metadata[k].solar_azimuth)
-        solel = np.deg2rad(hdr.frame_metadata[k].solar_elevation)
-        senaz = np.deg2rad(hdr.frame_metadata[0].sensor_azimuth)   # index 1 in MATLAB → 0 in Python
-        senel = np.deg2rad(hdr.frame_metadata[0].sensor_elevation)
+        solaz = np.deg2rad(hdr.frame_metadata[k].params.get("solar simulator device azimuth"))
+        solel = np.deg2rad(hdr.frame_metadata[k].params.get("solar elevation"))
+        senaz = np.deg2rad(hdr.frame_metadata[0].params.get("sensor azimuth"))   # index 1 in MATLAB → 0 in Python
+        senel = np.deg2rad(hdr.frame_metadata[0].params.get("sensor elevation"))
 
         # Solar pointing vector
         Usol = np.array([
