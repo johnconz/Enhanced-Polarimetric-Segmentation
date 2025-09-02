@@ -1,19 +1,10 @@
-# ----------------------------------------------------------------------->
-# Author: Connor Prikkel
-# Applied Sensing Lab, University of Dayton
-# 9/2/2025
-# ----------------------------------------------------------------------->
-
+import numpy as np
+import torch
+from torch.utils.data import Dataset
 from pathlib import Path
 from ASL import ASL
+import helper_functions as hf
 import argparse
-import numpy as np
-import helper_functions as hf
-import matplotlib.pyplot as plt
-import torch
-from typing import Callable, Dict, List, Optional, Any
-import helper_functions as hf
-from torch.utils.data import Dataset
 
 # Define constants
 MIN_INTENSITY = 1
@@ -25,32 +16,34 @@ DOLP_MAX = 1.0
 AOP_MAX = 0.5
 FUSION_COEFFICIENT = 0.5
 
-def _default_to_tensor(arr: np.ndarray) -> torch.Tensor:
-    """Convert a 2D numpy array to a torch tensor shaped [1, H, W]."""
-    if not isinstance(arr, np.ndarray):
-        arr = np.asarray(arr)
-    t = torch.from_numpy(arr)
-    if t.ndim == 2:
-        t = t.unsqueeze(0)
-    return t.float()
-
-
-# Path to ASL data dir
-files = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Train and evaluate Vision Mamba for multiple datasets."
     )
     parser.add_argument(
-        "--aop_rotate",
+        "--s0",
         action="store_true",
-        help="Perform aop rotations on each frame.",
+        help="Compute s0.",
     )
     parser.add_argument(
-        "--log_scale",
+        "--s1",
         action="store_true",
-        help="Apply logarithmic scaling to s0.",
+        help="Compute s1.",
+    )
+    parser.add_argument(
+        "--s2",
+        action="store_true",
+        help="Compute s2.",
+    )
+    parser.add_argument(
+        "--dolp",
+        action="store_true",
+        help="Compute DoLP.",
+    )
+    parser.add_argument(
+        "--aop",
+        action="store_true",
+        help="Compute AoP.",
     )
     parser.add_argument(
         "--raw_scale",
@@ -61,6 +54,11 @@ def parse_args():
         "--min_max",
         action="store_true",
         help="Apply min-max normalization to s0.",
+    )
+    parser.add_argument(
+        "--aop_rotate",
+        action="store_true",
+        help="Apply aop rotations to s0.",
     )
     parser.add_argument(
         "--hist_shift",
@@ -90,246 +88,192 @@ def match_mask_to_frame(mask_array, valid_pixels, stride=8):
 
     return mapping
 
-class ASLFrameDataset(Dataset):
+class MultiModalASLDataset(Dataset):
     """
-    Process all ASL files in the given directory.
-
-    Loads data header, mask array, valid_pixels;
-    builds a mapping, and computes stokes + enhanced parameters per frame. Utilizes lazy loading.
+    PyTorch-ready dataset for ASL polarimetric data with masks and multiple input modalities.
+    Uses lazy loading: frames are read only on demand.
     """
 
-    def __init__(
-        self,
-        file_index: List[Dict[str, Any]],
-        modalities: List[str],
-        transforms: Optional[Dict[str, Callable]] = None,
-        preload: bool = False,
-        compute_enhanced: bool = False,
-        s0std: float = 3.0,
-        dolp_max: float = 1.0,
-        aop_max: float = 0.5,
-        fusion_coeff: float = 0.5,
-        aop_mode: int = 1,
-        cache_dir: Optional[str] = None,
-        asl_class=ASL,
-    ) -> None:
-        self.file_index = file_index
+    def __init__(self, 
+                 asl_files, 
+                 mask_files, 
+                 modalities=("s0", "dolp", "aop"), 
+                 aop_mode="deg", 
+                 compute_enhanced: bool = False,
+                 raw_scale: bool = False,
+                 min_max: bool = False):
+        """
+        Parameters
+        ----------
+        asl_files : list of Path
+            List of .asl.hdr files
+        mask_files : list of Path
+            List of .npz mask files (with relabeled_masks, valid_pixels)
+        modalities : tuple
+            Any combination of "s0", "s1", "s2", "dolp", "aop", "enhanced_s0"
+        aop_mode : str
+            AoP rotation mode if enhanced_s0 is computed
+        compute_enhanced : bool
+            Whether to compute enhanced s0 maps (s0e1, s0e2)
+        raw_scale : bool
+            If True, min–max normalize raw data to [0,1] before computing Stokes
+        min_max : bool
+            If True, apply min–max normalization to s0
+        """
+        self.asl_files = list(asl_files)
+        self.mask_files = list(mask_files)
         self.modalities = modalities
-        self.transforms = transforms or {}
-        self.preload = preload
+        self.aop_mode = aop_mode
         self.compute_enhanced = compute_enhanced
-        self.s0std = s0std
-        self.dolp_max = dolp_max
-        self.aop_max = aop_max
-        self.fusion_coeff = fusion_coeff
-        self.aop_mode = int(aop_mode)
-        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
-        self._cache: Dict[int, Dict[str, Any]] = {}
-        self.ASL = asl_class
+        self.raw_scale = raw_scale
+        self.min_max = min_max
 
-        if self.cache_dir is not None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Pre-build index mapping (file_idx, frame_idx → mask slice)
+        self.index_map = []  # list of (file_idx, frame_idx, mask, valid_pixels)
+        self._asl_headers = [ASL(f) for f in self.asl_files]
 
-        if self.preload:
-            self._preload_all()
+        for file_idx, (asl_obj, mask_file) in enumerate(zip(self._asl_headers, self.mask_files)):
+            hdr = asl_obj.get_header()
+            with np.load(mask_file) as npz:
+                mask_array = npz["relabeled_masks"]    # (H,W,8)
+                valid_pixels = npz["valid_pixels"]     # (H,W,num_frames)
 
-    def _preload_all(self) -> None:
-        for i in range(len(self.file_index)):
-            self._cache[i] = self._load_and_process(i)
+            mapping = match_mask_to_frame(mask_array, valid_pixels)
+            num_frames = hdr.required["frames"]
 
-    def __len__(self) -> int:
-        return len(self.file_index)
+            for frame_idx in range(num_frames):
+                self.index_map.append((file_idx, frame_idx,
+                                       mapping[frame_idx]["mask"],
+                                       mapping[frame_idx]["valid_pixels"]))
 
-    def __getitem__(self, idx: int):
-        if self.preload and idx in self._cache:
-            sample = self._cache[idx]
-        else:
-            sample = self._load_and_process(idx)
-            if self.preload:
-                self._cache[idx] = sample
+    def __len__(self):
+        return len(self.index_map)
 
-        # Convert modalities to tensors and apply transforms
-        out_modalities: Dict[str, torch.Tensor] = {}
-        for mod, arr in sample["modalities"].items():
-            if mod in self.transforms:
-                out_modalities[mod] = self.transforms[mod](arr)
-            else:
-                out_modalities[mod] = _default_to_tensor(arr)
-
-        label = sample.get("label", -1)
-        mask = sample.get("mask", None)
-        meta = sample.get("meta", None)
-
-        return out_modalities, label, mask, meta
-
-    def _cache_paths_for(self, asl_path: str, frame_idx: int) -> Dict[str, Path]:
-        base = Path(asl_path).stem.replace(".", "_")
-        stem = f"{base}_frame{frame_idx}"
-        return {
-            "es0": self.cache_dir / f"{stem}_es0.npy",
-            "s0e1": self.cache_dir / f"{stem}_s0e1.npy",
-            "s0e2": self.cache_dir / f"{stem}_s0e2.npy",
-        }
-
-    def _load_and_process(self, idx: int) -> Dict[str, Any]:
-        entry = self.file_index[idx]
-        asl_path = str(entry["asl_path"]) if "asl_path" in entry else entry.get("path")
-        frame_idx = int(entry["frame"])
-        mask = entry.get("mask", None)
-        valid_pixels = entry.get("valid_pixels", None)
-        meta = entry.get("meta", {})
-        label = entry.get("label", -1)
-
-        # Read single frame using your ASL reader (ASL.get_data expects 1-based frames)
-        asl = self.ASL(asl_path)
-        frame_data, _, _ = asl.get_data(frames=[frame_idx + 1])
+    def _load_frame_modalities(self, frame_data, valid_pixels, asl_obj, frame_idx):
+        """
+        Compute requested modalities from raw frame data.
+        """
         frame_data = frame_data.astype(np.float32)
 
-        # Compute Stokes using helper function (expected shape (H, W, 5))
-        stokes = hf.compute_stokes(frame_data)
-        H, W = stokes.shape[0], stokes.shape[1]
+        # Scale raw data if requested
+        if self.raw_scale:
+            frame_data = (frame_data - MIN_INTENSITY) / (MAX_INTENSITY - MIN_INTENSITY + 1e-8)
 
-        modalities_out: Dict[str, np.ndarray] = {}
+        # Compute Stokes parameters
+        S = hf.compute_stokes(frame_data)  # (H, W, 5): s0, s1, s2, dolp, aop
+        s0 = S[:, :, 0]
+        s1 = S[:, :, 1]
+        s2 = S[:, :, 2]
 
-        # basic channels
-        if "s0" in self.modalities:
-            modalities_out["s0"] = stokes[:, :, 0].astype(np.float32)
-        if "s1" in self.modalities:
-            modalities_out["s1"] = stokes[:, :, 1].astype(np.float32)
+        # Normalize s0
+        if self.min_max:
+            s0 = (s0 - np.min(s0)) / (np.max(s0) - np.min(s0) + 1e-8)
+        elif self.raw_scale:
+            pass  # already in [0,1]
+        else:
+            # Use log scaling
+            s0_log = np.log1p(s0)
+            s0 = (s0_log - np.min(s0_log)) / (np.max(s0_log) - np.min(s0_log) + 1e-8)
+
+        output = {}
+        if "s0" in self.modalities: 
+            output["s0"] = s0
+        if "s1" in self.modalities: 
+            output["s1"] = s1 / (s0 + 1e-8)
         if "s2" in self.modalities:
-            modalities_out["s2"] = stokes[:, :, 2].astype(np.float32)
+            output["s2"] = s2 / (s0 + 1e-8)
+        if "dolp" in self.modalities:
+            dolp = np.sqrt(s1**2 + s2**2)
+            
+            # Clip DoLP to [0, 1]
+            dolp_norm = np.clip(dolp, 0, 1)
+            output["dolp"] = dolp_norm
+        if "aop" in self.modalities:
+            aop = 0.5 * np.arctan2(s2, s1)
 
-        # derived DoLP / AoP (normalize as in your prepare_data)
-        if any(m in self.modalities for m in ("dolp", "aop")):
-            s0 = stokes[:, :, 0].astype(np.float32)
-            s1 = stokes[:, :, 1].astype(np.float32)
-            s2 = stokes[:, :, 2].astype(np.float32)
-            s1n = s1 / (s0 + 1e-8)
-            s2n = s2 / (s0 + 1e-8)
-            dolp = np.sqrt(s1n**2 + s2n**2)
-            aop = 0.5 * np.arctan2(s2n, s1n)
-            if "dolp" in self.modalities:
-                modalities_out["dolp"] = np.clip(dolp, 0, 1).astype(np.float32)
-            if "aop" in self.modalities:
-                # keep radians in [-pi/2, pi/2]
-                modalities_out["aop"] = aop.astype(np.float32)
+            # Normalize AoP from [-pi/2, pi/2] to [0, 1]
+            aop_norm = (aop + np.pi / 2) / np.pi
+            output["aop"] = aop_norm
 
-        # Optionally compute enhanced outputs (calls your helper)
-        if self.compute_enhanced:
-            # hf.compute_enhanceds0 expects S as (H,W,5) or (H,W,5,num_frames)
-            # here we pass a single-frame S
-            S_stack = stokes.copy()
-
-            # caching support
-            es0 = None
-            s0e1 = None
-            s0e2 = None
-            if self.cache_dir is not None:
-                cpaths = self._cache_paths_for(asl_path, frame_idx)
-                if cpaths["es0"].exists() and cpaths["s0e1"].exists() and cpaths["s0e2"].exists():
-                    es0 = np.load(cpaths["es0"])
-                    s0e1 = np.load(cpaths["s0e1"])
-                    s0e2 = np.load(cpaths["s0e2"])
-            if es0 is None:
-                es0, s0e1_all, s0e2_all = hf.compute_enhanceds0(
-                    S_stack,
-                    self.s0std,
-                    self.dolp_max,
-                    self.aop_max,
-                    self.fusion_coeff,
-                    valid_pixels if valid_pixels is not None else np.ones((H, W)),
-                    asl,
-                    self.aop_mode,
-                )
-                # hf returns es0 (2D) and s0e1/s0e2 shaped (H,W,num_frames) or (H,W)
-                # extract first frame if necessary
-                if isinstance(s0e1_all, np.ndarray) and s0e1_all.ndim == 3:
-                    s0e1 = s0e1_all[:, :, 0]
-                else:
-                    s0e1 = s0e1_all
-                if isinstance(s0e2_all, np.ndarray) and s0e2_all.ndim == 3:
-                    s0e2 = s0e2_all[:, :, 0]
-                else:
-                    s0e2 = s0e2_all
-
-                if self.cache_dir is not None:
-                    np.save(self.cache_dir / f"{Path(asl_path).stem}_frame{frame_idx}_es0.npy", es0)
-                    np.save(self.cache_dir / f"{Path(asl_path).stem}_frame{frame_idx}_s0e1.npy", s0e1)
-                    np.save(self.cache_dir / f"{Path(asl_path).stem}_frame{frame_idx}_s0e2.npy", s0e2)
-
-            modalities_out["es0"] = np.asarray(es0, dtype=np.float32)
-            modalities_out["s0e1"] = np.asarray(s0e1, dtype=np.float32)
-            modalities_out["s0e2"] = np.asarray(s0e2, dtype=np.float32)
-
-        sample = {
-            "modalities": modalities_out,
-            "mask": mask,
-            "valid_pixels": valid_pixels,
-            "meta": meta,
-            "label": label,
-        }
-        return sample
-
-
-# Utility to build file index from directories (mirrors your prepare_data logic)
-def build_file_index(data_paths: List[Path], mask_paths: List[Path]) -> List[Dict[str, Any]]:
-    """
-    Construct a file_index list from ASL headers and mask npz files.
-    Uses modular indexing like match_mask_to_frame to handle mismatched frame counts.
-    """
-    file_index: List[Dict[str, Any]] = []
-
-    for data_file, mask_file in zip(data_paths, mask_paths):
-        asl = ASL(data_file)
-        hdr = asl.get_header()
-        num_frames = int(hdr.required.get("frames", 1))  # total frames in ASL
-
-        with np.load(mask_file) as npz:
-            mask_array = npz["relabeled_masks"]        # (H, W, azimuths)
-            valid_pixels_stack = npz["valid_pixels"]   # (H, W, num_valid_frames)
-
-        # Build mapping using modular indexing
-        mapping = match_mask_to_frame(mask_array, valid_pixels_stack)
-
-        for frame_idx in range(num_frames):
-            file_index.append(
-                {
-                    "asl_path": str(data_file),
-                    "frame": frame_idx,
-                    "mask": mapping[frame_idx]["mask"].astype(np.uint8),
-                    "valid_pixels": mapping[frame_idx]["valid_pixels"].astype(np.uint8),
-                    "meta": {"scene": data_file.name, "frame": frame_idx},
-                }
+        if self.compute_enhanced and "enhanced_s0" in self.modalities:
+            es0, s0e1, s0e2 = hf.compute_enhanceds0(
+                S, s0std=S0_STD, dolp_max=DOLP_MAX, aop_max=AOP_MAX,
+                fusion_coefficient=FUSION_COEFFICIENT,
+                valid_pixels=valid_pixels,
+                hdr=asl_obj,
+                aop_mode=self.aop_mode
             )
+            output["enhanced_s0"] = es0
+            output["s0e1"] = s0e1
+            output["s0e2"] = s0e2
 
-    return file_index
+        # Convert to torch tensors with (C,H,W) format (C=1 per modality)
+        for k in output:
+            arr = output[k]
+            output[k] = torch.from_numpy(arr).unsqueeze(0).float()
 
+        return output
 
+    def __getitem__(self, idx):
+        file_idx, frame_idx, mask_np, valid_np = self.index_map[idx]
+        asl_obj = self._asl_headers[file_idx]
+
+        # 1-indexed frame access
+        frame_data, _, _ = asl_obj.get_data(frames=[frame_idx+1])
+        modalities_dict = self._load_frame_modalities(frame_data, valid_np, asl_obj, frame_idx)
+
+        # Convert mask and valid pixels to torch tensors
+        mask = torch.from_numpy(mask_np).long()
+        valid_pixels = torch.from_numpy(valid_np).bool()
+
+        return modalities_dict, mask, valid_pixels
+    
 if __name__ == "__main__":
-    # quick demo: build index from folders and iterate dataset
-    import argparse
-    from pathlib import Path
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="/home/connor/MATLAB/data")
-    parser.add_argument("--mask_dir", type=str, default="/home/connor/Thesis/updated_masks")
-    args = parser.parse_args()
+    args = parse_args()
+    raw_scale = False
+    min_max = False
 
-    data_files = sorted(Path(args.data_dir).glob("*.asl.hdr"))
-    mask_files = sorted(Path(args.mask_dir).glob("*.npz"))
+    # Initialize list of target modalities
+    modalities = []
 
-    file_index = build_file_index(data_files, mask_files)
-    print(f"Built file_index with {len(file_index)} entries")
+    data_dir = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
+    mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
 
-    dataset = ASLFrameDataset(
-        file_index=file_index,
-        modalities=["s0", "dolp", "aop", "es0"],
-        preload=False,
-        compute_enhanced=True,
-        cache_dir="./cache_asl",
+    if args.raw_scale:
+        raw_scale = True
+
+    if args.min_max:
+        min_max = True
+
+    if args.hist_shift:
+        # Bool to track whether to compute enhanced param.
+        compute_enhanced = True
+        aop_mode = 2
+        modalities.append("enhanced_s0")
+
+    if args.aop_rotate:
+        compute_enhanced = True
+        aop_mode = 1
+        modalities.append("enhanced_s0")
+
+    if args.s0:
+        modalities.append("s0")
+    if args.s1:
+        modalities.append("s1")
+    if args.s2:
+        modalities.append('s2')
+    if args.dolp:
+        modalities.append("dolp")
+    if args.aop:
+        modalities.append("aop")
+
+    dataset = MultiModalASLDataset(
+        data_dir,
+        mask_dir,
+        modalities=modalities,
+        compute_enhanced=compute_enhanced,
+        raw_scale=raw_scale,
+        min_max=min_max
     )
 
-    # example: iterate first 5 samples
-    for i in range(min(5, len(dataset))):
-        mod_dict, label, mask, meta = dataset[i]
-        print(i, meta, {k: v.shape for k, v in mod_dict.items()})
-
+    
