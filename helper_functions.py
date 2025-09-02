@@ -178,7 +178,7 @@ def compute_saopc(aop: np.ndarray, msize: int, method: float) -> np.ndarray:
 
     return pcm
 
-def imgscale(img, scaling_a = None, scaling_b = None):
+def imgscale(img, scaling_a = None, scaling_b = None, return_params = False):
     """
     Scale a given image based on certain input parameters.
 
@@ -197,10 +197,10 @@ def imgscale(img, scaling_a = None, scaling_b = None):
     out:
     - ndarray, scaled image in range [0, 1], dtype=float64.
     
-    alpha_l:
+    (optional) alpha_l:
     - lower bound used for scaling.
     
-    alpha_h:
+    (optional) alpha_h:
     - upper bound used for scaling.
     """
 
@@ -234,7 +234,10 @@ def imgscale(img, scaling_a = None, scaling_b = None):
     # Linear scaling to [0,1]
     out = (img - alpha_l) / (alpha_h - alpha_l)
 
-    return out, alpha_l, alpha_h
+    if return_params:
+        return out, alpha_h, alpha_l
+    else:
+        return out
     
 
 def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
@@ -246,77 +249,70 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
     NOTE: This function is a conversion of the MATLAB function of the same name.
     """
 
-    # For handling only one frame
+    # Handle 3D (single frame) by promoting to 4D
     if S.ndim == 3:
         S = S[:, :, :, np.newaxis]
     if S.ndim != 4:
-        raise ValueError(f"S must be 3D (H, W, 5 num_frames), got {S.ndim}D")
+        raise ValueError(f"S must be 4D (H, W, 5, num_frames), got {S.ndim}D")
+
     H, W, C, num_frames = S.shape
     if C != 5:
         raise ValueError(f"Third dimension of S must be 5 (s0, s1, s2, dolp, aop), got {C}")
 
     print(f"[INFO] S.shape = {S.shape}  → num_frames = {num_frames}")
 
-    # Initialize enhanced Stokes products
+    # Initialize outputs
     s0e1 = np.zeros((H, W, num_frames), dtype=np.float64)
     s0e2 = np.zeros((H, W, num_frames), dtype=np.float64)
 
-    # Intensity range (for sigma_color scaling)
-    # (ONLY NEEDED FOR NORMALIZATION)
-    #S_min, S_max = S.min(), S.max()
-    #ntensity_range = S_max - S_min
-
-    # For all frames
     for k in range(num_frames):
         SS = np.zeros((H, W, 5), dtype=np.float64)
+
+        # Scale s0 and denoise s1/s2
         SS[:, :, 0] = S[:, :, 0, k]
+        SS[:, :, 1] = denoise_bilateral(S[:, :, 1, k].astype(np.float64),
+                                        sigma_color=100,
+                                        sigma_spatial=2,
+                                        channel_axis=None)
+        SS[:, :, 2] = denoise_bilateral(S[:, :, 2, k].astype(np.float64),
+                                        sigma_color=100,
+                                        sigma_spatial=2,
+                                        channel_axis=None)
 
-        # MATLAB imbilatfilt replacement
-        SS[:, :, 1] = denoise_bilateral(
-            S[:, :, 1, k].astype(np.float64),
-            #sigma_color=100 / intensity_range,  # scale to match MATLAB DegreeOfSmoothing
-            sigma_color=100,
-            sigma_spatial=2,                    # adjust to match MATLAB SpatialSigma
-            channel_axis=None
-        )
-
-        SS[:, :, 2] = denoise_bilateral(
-            S[:, :, 2, k].astype(np.float64),
-            #sigma_color=100 / intensity_range,
-            sigma_color=100,
-            sigma_spatial=2,
-            channel_axis=None
-        )
-
-        # Compute DoLP and AoP
+        # Derived Stokes products
         SS[:, :, 3] = np.sqrt((SS[:, :, 1] / SS[:, :, 0])**2 +
-                            (SS[:, :, 2] / SS[:, :, 0])**2)
+                                (SS[:, :, 2] / SS[:, :, 0])**2)
         SS[:, :, 4] = 0.5 * np.arctan2(SS[:, :, 2], SS[:, :, 1])
 
-        edolp = compute_enhanced_dolp(S)
+        # Enhanced DoLP
+        edolp = compute_enhanced_dolp(S[:, :, :, k])
+
+        # Select AoP mode
         if aop_mode == 1:
             eaop = hdr.rotate_aop(SS[:, :, 1], SS[:, :, 2], k)
         elif aop_mode == 2:
-            eaop = circshift_aop_histmax(SS[:, :, 4], valid_pixels)  
+            eaop = circshift_aop_histmax(SS[:, :, 4], valid_pixels)
         else:
             raise ValueError("Invalid aop_mode. Use 1 or 2.")
 
         saopc = compute_saopc(eaop, 3, 0)
 
-        es0 = imgscale(SS[:, :, 0], s0std)[0].squeeze()
-        aopmap = imgscale(compute_periodic_aop(eaop), -np.sqrt(2), np.sqrt(2))[0].squeeze()
-        dolpmap = imgscale(edolp, 0, dolp_max)[0].squeeze()
+        # Scale s0 and enhancement maps
+        es0 = imgscale(SS[:, :, 0], s0std)
+        aopmap = imgscale(compute_periodic_aop(eaop), -np.sqrt(2), np.sqrt(2))
+        dolpmap = imgscale(edolp, 0, dolp_max)
 
-        # mixture1: scale → exponentiate → scale again
-        mixture1 = fusion_coefficient * es0 + (1 - fusion_coefficient) * np.maximum(es0, dolpmap)
-        mixture1 = imgscale(mixture1 ** (1 - dolpmap))[0].squeeze()
+        # Blend s0 and enhanced images
+        mixture1 = imgscale(fusion_coefficient * es0 +
+                            (1 - fusion_coefficient) * np.maximum(es0, dolpmap))
+        mixture1 = imgscale(mixture1 ** (1 - dolpmap))
 
-        # mixture2: same logic
-        mixture2 = fusion_coefficient * es0 + (1 - fusion_coefficient) * np.maximum(
-            es0, np.maximum(dolpmap, aop_max * aopmap)
-        )
-        mixture2 = imgscale(mixture2 ** (1 - np.maximum(dolpmap, aop_max * aopmap)))[0].squeeze()
+        mixture2 = imgscale(fusion_coefficient * es0 +
+                            (1 - fusion_coefficient) *
+                            np.maximum(es0, np.maximum(dolpmap, aop_max * aopmap)))
+        mixture2 = imgscale(mixture2 ** (1 - np.maximum(dolpmap, aop_max * aopmap)))
 
+        # Discount noisy polarimetric pixels
         s0e1[:, :, k] = ((1 - saopc) * es0 + saopc * mixture1) * valid_pixels
         s0e2[:, :, k] = ((1 - saopc) * es0 + saopc * mixture2) * valid_pixels
 

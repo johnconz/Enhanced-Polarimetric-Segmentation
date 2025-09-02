@@ -11,6 +11,7 @@ import numpy as np
 import helper_functions as hf
 import matplotlib.pyplot as plt
 from typing import Dict, List
+import sys
 
 # Define constants
 MIN_INTENSITY = 1
@@ -168,9 +169,11 @@ def process_dataset(
 
                 # Compute enhanced parameters
                 es0, s0e1, s0e2 = hf.compute_enhanceds0(stokes, S0_STD, DOLP_MAX, AOP_MAX, FUSION_COEFFICIENT, valid_pixels, c_hdr, aop_mode)
-                print(f"Enhanced s0: {es0}")
-                print(f"Enhanced mixture 1: {s0e1}")
-                print(f"Enhanced mixture 2: {s0e2}")
+                
+                # DEBUG PRINT STATEMENTS #
+                #print(f"Enhanced s0: {es0}")
+                #print(f"Enhanced mixture 1: {np.nonzero(s0e1)}")
+                #print(f"Enhanced mixture 2: {np.nonzero(s0e2)}")
 
 if __name__ == "__main__":
     args = parse_args()
