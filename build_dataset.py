@@ -61,6 +61,11 @@ def parse_args():
         help="Apply aop rotations to s0.",
     )
     parser.add_argument(
+        "--enhanced_mixtures",
+        action="store_true",
+        help="Save 'mixtures' relating to enhanced s0."
+    )
+    parser.add_argument(
         "--hist_shift",
         action="store_true",
         help="Apply histogram shifting to s0.",
@@ -200,7 +205,7 @@ class MultiModalASLDataset(Dataset):
             aop_norm = (aop + np.pi / 2) / np.pi
             output["aop"] = aop_norm
 
-        if self.compute_enhanced and "enhanced_s0" in self.modalities:
+        if self.compute_enhanced:
             es0, s0e1, s0e2 = hf.compute_enhanceds0(
                 S, s0std=S0_STD, dolp_max=DOLP_MAX, aop_max=AOP_MAX,
                 fusion_coefficient=FUSION_COEFFICIENT,
@@ -208,9 +213,16 @@ class MultiModalASLDataset(Dataset):
                 hdr=asl_obj,
                 aop_mode=self.aop_mode
             )
+
             output["enhanced_s0"] = es0
-            output["s0e1"] = s0e1
-            output["s0e2"] = s0e2
+
+            if "s0e1" in self.modalities:
+
+                # To remove extra 4th dimension
+                output["s0e1"] = s0e1.squeeze(-1)
+            
+            if "s0e2" in self.modalities:
+                output["s0e2"] = s0e2.squeeze(-1)
 
         # Convert to torch tensors with (C,H,W) format (C=1 per modality)
         for k in output:
@@ -288,6 +300,9 @@ if __name__ == "__main__":
         modalities.append("dolp")
     if args.aop:
         modalities.append("aop")
+    if args.enhanced_mixtures:
+        modalities.append("s0e1")
+        modalities.append("s0e2")
 
     if args.debug:
         debug = True
@@ -306,6 +321,6 @@ if __name__ == "__main__":
     )
 
     # Get first sample of dataset
-    x, mask, valid = dataset[0] # x is [3, H, W]
+    x, mask, valid = dataset[0] # x is [modalities, H, W]
 
     
