@@ -65,28 +65,17 @@ def parse_args():
         action="store_true",
         help="Apply histogram shifting to s0.",
     )
+    parser.add_argument(
+        "--stack_modalities",
+        action="store_true",
+        help="Stack output modalities -> represent as a tensor.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Add debug print statements to see intermediate output."
+    )
     return parser.parse_args()
-
-def match_mask_to_frame(mask_array, valid_pixels, stride=8):
-    """
-    Build a dictionary mapping each data frame to its corresponding 
-    mask frame and valid_pixels array.
-    """
-
-    mapping = {}
-    num_frames = valid_pixels.shape[-1]
-
-    for frame_idx in range(num_frames):
-
-        # frame 0 -> mask[0], frame 1 -> mask[1], etc.
-        # The azimuth repeats every 'stride' frames
-        azimuth_idx = frame_idx % stride
-        mapping[frame_idx] = {
-            "mask": mask_array[:, :, azimuth_idx],
-            "valid_pixels": valid_pixels[:, :, frame_idx]
-        }
-
-    return mapping
 
 class MultiModalASLDataset(Dataset):
     """
@@ -98,10 +87,12 @@ class MultiModalASLDataset(Dataset):
                  asl_files, 
                  mask_files, 
                  modalities=("s0", "dolp", "aop"), 
-                 aop_mode="deg", 
+                 aop_mode: int = 1, 
                  compute_enhanced: bool = False,
                  raw_scale: bool = False,
-                 min_max: bool = False):
+                 min_max: bool = False,
+                 debug: bool = False,
+                 stack_modalities: bool = False):
         """
         Parameters
         ----------
@@ -127,6 +118,8 @@ class MultiModalASLDataset(Dataset):
         self.compute_enhanced = compute_enhanced
         self.raw_scale = raw_scale
         self.min_max = min_max
+        self.debug = debug
+        self.stack_modalities = stack_modalities
 
         # Pre-build index mapping (file_idx, frame_idx → mask slice)
         self.index_map = []  # list of (file_idx, frame_idx, mask, valid_pixels)
@@ -138,13 +131,25 @@ class MultiModalASLDataset(Dataset):
                 mask_array = npz["relabeled_masks"]    # (H,W,8)
                 valid_pixels = npz["valid_pixels"]     # (H,W,num_frames)
 
-            mapping = match_mask_to_frame(mask_array, valid_pixels)
+            num_masks = mask_array.shape[-1]
+            num_valid_pixels = valid_pixels.shape[-1]
             num_frames = hdr.required["frames"]
 
+            if self.debug:
+                print(f"[DEBUG] File {asl_obj.path.name}: {num_frames} frames, "
+                      f"{num_masks} masks, {num_valid_pixels} valid slices")
+
+            # Handle mapping of masks/valid_pixels to their respective frames
+            # Repeats every 8 frames
             for frame_idx in range(num_frames):
-                self.index_map.append((file_idx, frame_idx,
-                                       mapping[frame_idx]["mask"],
-                                       mapping[frame_idx]["valid_pixels"]))
+                az_idx = frame_idx % num_masks
+                vp_idx = frame_idx % num_valid_pixels
+                self.index_map.append((
+                    file_idx,
+                    frame_idx,
+                    mask_array[:, :, az_idx],
+                    valid_pixels[:, :, vp_idx]
+                ))
 
     def __len__(self):
         return len(self.index_map)
@@ -212,6 +217,17 @@ class MultiModalASLDataset(Dataset):
             arr = output[k]
             output[k] = torch.from_numpy(arr).unsqueeze(0).float()
 
+        if self.debug:
+            print(f'[DEBUG] Frame {frame_idx}: modalities {list[output.keys()]}, shapes: {[output[k].shape for k in output]}')
+
+        # Stack modalities and represent as a (C, H, W) tensor
+        if self.stack_modalities:
+            tensor = torch.cat([output[k] for k in self.modalities if k in output], dim=0)
+            if self.debug:
+                print(f'[DEBUG] Stacked tensor shape: {tensor.shape}')
+
+            return tensor
+
         return output
 
     def __getitem__(self, idx):
@@ -229,9 +245,12 @@ class MultiModalASLDataset(Dataset):
         return modalities_dict, mask, valid_pixels
     
 if __name__ == "__main__":
+    # Read input from user + initialize placeholder vars
     args = parse_args()
     raw_scale = False
     min_max = False
+    debug = False
+    stack_modalities = False
 
     # Initialize list of target modalities
     modalities = []
@@ -244,6 +263,9 @@ if __name__ == "__main__":
 
     if args.min_max:
         min_max = True
+
+    if args.stack_modalities:
+        stack_modalities = True
 
     if args.hist_shift:
         # Bool to track whether to compute enhanced param.
@@ -267,13 +289,23 @@ if __name__ == "__main__":
     if args.aop:
         modalities.append("aop")
 
+    if args.debug:
+        debug = True
+
+    # Create a dataset
     dataset = MultiModalASLDataset(
         data_dir,
         mask_dir,
         modalities=modalities,
+        aop_mode= aop_mode,
         compute_enhanced=compute_enhanced,
         raw_scale=raw_scale,
-        min_max=min_max
+        min_max=min_max,
+        debug=debug,
+        stack_modalities=stack_modalities
     )
+
+    # Get first sample of dataset
+    x, mask, valid = dataset[0] # x is [3, H, W]
 
     
