@@ -1,3 +1,9 @@
+# ----------------------------------------------------------------------->
+# Author: Connor Prikkel
+# Applied Sensing Lab, University of Dayton
+# 9/6/2025
+# ----------------------------------------------------------------------->
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -256,71 +262,71 @@ class MultiModalASLDataset(Dataset):
 
         return modalities_dict, mask, valid_pixels
     
-if __name__ == "__main__":
-    # Read input from user + initialize placeholder vars
-    args = parse_args()
-    raw_scale = False
-    min_max = False
-    debug = False
-    stack_modalities = False
+# if __name__ == "__main__":
+#     # Read input from user + initialize placeholder vars
+#     args = parse_args()
+#     raw_scale = False
+#     min_max = False
+#     debug = False
+#     stack_modalities = False
 
-    # Initialize list of target modalities
-    modalities = []
+#     # Initialize list of target modalities
+#     modalities = []
 
-    data_dir = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
-    mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
+#     data_dir = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
+#     mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
 
-    if args.raw_scale:
-        raw_scale = True
+#     if args.raw_scale:
+#         raw_scale = True
 
-    if args.min_max:
-        min_max = True
+#     if args.min_max:
+#         min_max = True
 
-    if args.stack_modalities:
-        stack_modalities = True
+#     if args.stack_modalities:
+#         stack_modalities = True
 
-    if args.hist_shift:
-        # Bool to track whether to compute enhanced param.
-        compute_enhanced = True
-        aop_mode = 2
-        modalities.append("enhanced_s0")
+#     if args.hist_shift:
+#         # Bool to track whether to compute enhanced param.
+#         compute_enhanced = True
+#         aop_mode = 2
+#         modalities.append("enhanced_s0")
 
-    if args.aop_rotate:
-        compute_enhanced = True
-        aop_mode = 1
-        modalities.append("enhanced_s0")
+#     if args.aop_rotate:
+#         compute_enhanced = True
+#         aop_mode = 1
+#         modalities.append("enhanced_s0")
 
-    if args.s0:
-        modalities.append("s0")
-    if args.s1:
-        modalities.append("s1")
-    if args.s2:
-        modalities.append('s2')
-    if args.dolp:
-        modalities.append("dolp")
-    if args.aop:
-        modalities.append("aop")
-    if args.enhanced_mixtures:
-        modalities.append("s0e1")
-        modalities.append("s0e2")
+#     if args.s0:
+#         modalities.append("s0")
+#     if args.s1:
+#         modalities.append("s1")
+#     if args.s2:
+#         modalities.append('s2')
+#     if args.dolp:
+#         modalities.append("dolp")
+#     if args.aop:
+#         modalities.append("aop")
+#     if args.enhanced_mixtures:
+#         modalities.append("s0e1")
+#         modalities.append("s0e2")
 
-    if args.debug:
-        debug = True
+#     if args.debug:
+#         debug = True
 
-    # Create a dataset
-    dataset = MultiModalASLDataset(
-        data_dir,
-        mask_dir,
-        modalities=modalities,
-        aop_mode= aop_mode,
-        compute_enhanced=compute_enhanced,
-        raw_scale=raw_scale,
-        min_max=min_max,
-        debug=debug,
-        stack_modalities=stack_modalities
-    )
+#     # Create a dataset
+#     dataset = MultiModalASLDataset(
+#         data_dir,
+#         mask_dir,
+#         modalities=modalities,
+#         aop_mode= aop_mode,
+#         compute_enhanced=compute_enhanced,
+#         raw_scale=raw_scale,
+#         min_max=min_max,
+#         debug=debug,
+#         stack_modalities=stack_modalities
+#     )
 
-    # Get first sample of dataset
-    x, mask, valid = dataset[0] # x is [modalities, H, W]
+#     # Get first sample of dataset
+#     x, mask, valid = dataset[0] # x is [modalities, H, W]
 
     
