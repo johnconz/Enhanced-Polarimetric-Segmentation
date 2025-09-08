@@ -22,71 +22,71 @@ DOLP_MAX = 1.0
 AOP_MAX = 0.5
 FUSION_COEFFICIENT = 0.5
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Train and evaluate Vision Mamba for multiple datasets."
-    )
-    parser.add_argument(
-        "--s0",
-        action="store_true",
-        help="Compute s0.",
-    )
-    parser.add_argument(
-        "--s1",
-        action="store_true",
-        help="Compute s1.",
-    )
-    parser.add_argument(
-        "--s2",
-        action="store_true",
-        help="Compute s2.",
-    )
-    parser.add_argument(
-        "--dolp",
-        action="store_true",
-        help="Compute DoLP.",
-    )
-    parser.add_argument(
-        "--aop",
-        action="store_true",
-        help="Compute AoP.",
-    )
-    parser.add_argument(
-        "--raw_scale",
-        action="store_true",
-        help="Apply min-max scaling on raw intensity data.",
-    )
-    parser.add_argument(
-        "--min_max",
-        action="store_true",
-        help="Apply min-max normalization to s0.",
-    )
-    parser.add_argument(
-        "--aop_rotate",
-        action="store_true",
-        help="Apply aop rotations to s0.",
-    )
-    parser.add_argument(
-        "--enhanced_mixtures",
-        action="store_true",
-        help="Save 'mixtures' relating to enhanced s0."
-    )
-    parser.add_argument(
-        "--hist_shift",
-        action="store_true",
-        help="Apply histogram shifting to s0.",
-    )
-    parser.add_argument(
-        "--stack_modalities",
-        action="store_true",
-        help="Stack output modalities -> represent as a tensor.",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Add debug print statements to see intermediate output."
-    )
-    return parser.parse_args()
+# def parse_args():
+#     parser = argparse.ArgumentParser(
+#         description="Train and evaluate Vision Mamba for multiple datasets."
+#     )
+#     parser.add_argument(
+#         "--s0",
+#         action="store_true",
+#         help="Compute s0.",
+#     )
+#     parser.add_argument(
+#         "--s1",
+#         action="store_true",
+#         help="Compute s1.",
+#     )
+#     parser.add_argument(
+#         "--s2",
+#         action="store_true",
+#         help="Compute s2.",
+#     )
+#     parser.add_argument(
+#         "--dolp",
+#         action="store_true",
+#         help="Compute DoLP.",
+#     )
+#     parser.add_argument(
+#         "--aop",
+#         action="store_true",
+#         help="Compute AoP.",
+#     )
+#     parser.add_argument(
+#         "--raw_scale",
+#         action="store_true",
+#         help="Apply min-max scaling on raw intensity data.",
+#     )
+#     parser.add_argument(
+#         "--min_max",
+#         action="store_true",
+#         help="Apply min-max normalization to s0.",
+#     )
+#     parser.add_argument(
+#         "--aop_rotate",
+#         action="store_true",
+#         help="Apply aop rotations to s0.",
+#     )
+#     parser.add_argument(
+#         "--enhanced_mixtures",
+#         action="store_true",
+#         help="Save 'mixtures' relating to enhanced s0."
+#     )
+#     parser.add_argument(
+#         "--hist_shift",
+#         action="store_true",
+#         help="Apply histogram shifting to s0.",
+#     )
+#     parser.add_argument(
+#         "--stack_modalities",
+#         action="store_true",
+#         help="Stack output modalities -> represent as a tensor.",
+#     )
+#     parser.add_argument(
+#         "--debug",
+#         action="store_true",
+#         help="Add debug print statements to see intermediate output."
+#     )
+#     return parser.parse_args()
 
 class MultiModalASLDataset(Dataset):
     """
