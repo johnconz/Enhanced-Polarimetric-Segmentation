@@ -255,6 +255,10 @@ def main():
     stack_modalities = args.stack_modalities
     debug = args.debug
 
+    # Initialize placeholders for enhanced parameters
+    aop_mode = 0 # 0 = none, 1 = rotate, 2 = hist shift
+    compute_enhanced = False
+
     device = torch.device(f"cuda:{args.cuda_device}" if torch.cuda.is_available() else "cpu")
 
     # ----------------------------------------------------------------------->
@@ -284,7 +288,7 @@ def main():
         data_dir,
         mask_dir,
         modalities=tuple(args.modalities),
-        aop_mode= aop_mode,
+        aop_mode=aop_mode,
         compute_enhanced=compute_enhanced,
         raw_scale=raw_scale,
         min_max=min_max,
