@@ -176,7 +176,7 @@ def compute_iou(preds, targets, num_classes):
     return iou
 
 
-def test_model(args, model, dataloader, device, num_classes):
+def test_model(args, model, dataloader, device):
     model.eval()  # Set the model to evaluation mode
     criterion = nn.CrossEntropyLoss()  # Use the same loss function as during training
     test_loss = 0.0
@@ -240,7 +240,7 @@ def test_model(args, model, dataloader, device, num_classes):
     print(f"Test Loss: {avg_test_loss:.8f}, Test Accuracy: {test_accuracy:.2f}%")
     print(f"Precision: {precision:.8f}, Recall: {recall:.8f}, F1 Score: {f1:.8f}")
     print(f"Mean IoU: {weighted_iou}")
-    print(f"Per-class IoU: {compute_iou(all_preds, all_masks, num_classes)}")
+    print(f"Per-class IoU: {compute_iou(all_preds, all_masks, args.num_classes)}")
     print(f"Total Inference Time: {total_inference_time:.4f} seconds")
 
     return avg_test_loss, test_accuracy, precision, recall, f1, iou
@@ -317,16 +317,16 @@ def main():
     batch = next(iter(train_loader))
 
     # FOR DEBUG PRINT STATEMENTS
+
+    if args.stack_modalities:
+        data, masks, _ = batch
+    else:
+        data_dict, masks = batch
+        data = torch.cat([data_dict[i] for i in args.modalities], dim=1)
+
     if args.debug:
-        if args.stack_modalities:
-            data, masks, _ = batch
-        else:
-            data_dict, masks = batch
-            data = torch.cat([data_dict[i] for i in args.modalities], dim=1)
-
-
-            print(f"[DEBUG] Sample input shape: {data.shape}")
-            print(f"[DEBUG] Sample mask shape: {masks.shape}")
+        print(f"[DEBUG] Sample input shape: {data.shape}")
+        print(f"[DEBUG] Sample mask shape: {masks.shape}")
 
     # ----------------------------------------------------------------------->
     # INITIALIZE MODEL + TRAINING
@@ -364,7 +364,7 @@ def main():
         model.load_state_dict(torch.load(f"{model_name}_best_accuracy_model.pt"))
         model.eval()
         
-        test_model(model, test_loader, device, args.num_classes)
+        test_model(args, model, test_loader, device)
 
 if __name__ == "__main__":
     main()
