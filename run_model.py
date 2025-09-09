@@ -317,14 +317,16 @@ def main():
     batch = next(iter(train_loader))
 
     # FOR DEBUG PRINT STATEMENTS
-    if args.stack_modalities:
-        data, masks, _ = batch
-    else:
-        data_dict, masks = batch
-        data = torch.cat([data_dict[i] for i in args.modalities], dim=1)
+    if args.debug:
+        if args.stack_modalities:
+            data, masks, _ = batch
+        else:
+            data_dict, masks = batch
+            data = torch.cat([data_dict[i] for i in args.modalities], dim=1)
 
-    print(f"[DEBUG] Sample input shape: {data.shape}")
-    print(f"[DEBUG] Sample mask shape: {masks.shape}")
+
+            print(f"[DEBUG] Sample input shape: {data.shape}")
+            print(f"[DEBUG] Sample mask shape: {masks.shape}")
 
     # ----------------------------------------------------------------------->
     # INITIALIZE MODEL + TRAINING
@@ -349,7 +351,7 @@ def main():
         print(f"Training on device: {device}")
 
         # Train the model
-        train_model(args, model, train_loader, device, val_loader)
+        train_model(args, model, train_loader, device, val_loader, model_name=model_name)
 
         # Save the trained model
         torch.save(model.state_dict(), f"{model_name}.pt")
