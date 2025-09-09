@@ -35,23 +35,19 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--num-classes", type=int, required=True)
+    parser.add_argument("--num-classes", type=int, default=10)
     parser.add_argument("--cuda-device", type=int, default=0)
-    parser.add_argument("--stack-modalities", action="store_true")
     parser.add_argument("--modalities", nargs="+", default=["s0", "dolp", "aop"],
                         help="List of modalities to use; " \
                         "options: s0, s1, s2, dolp, aop, enhanced_s0, s0e1, s0e2")
-    parser.add_argument("--model-name", type=str, default="asl-vm-unet")
-    parser.add_argument("--val-split", type=float, default=0.2,
-                        help="Fraction of dataset for validation (default=0.2)")
     parser.add_argument("--model-name", type=str, required=True)
     
     # --- For dataset specifications ---
-    parser.add_argument("--raw_scale", action="store_true", help="Apply min-max scaling on raw intensity data.")
-    parser.add_argument("--min_max", action="store_true", help="Apply min-max normalization to s0.")
-    parser.add_argument("--aop_rotate", action="store_true", help="Apply aop rotations to s0.")
-    parser.add_argument("--hist_shift", action="store_true", help="Apply histogram shifting to s0.")
-    parser.add_argument("--stack_modalities", action="store_true", help="Stack output modalities -> represent as a tensor.")
+    parser.add_argument("--raw-scale", action="store_true", help="Apply min-max scaling on raw intensity data.")
+    parser.add_argument("--min-max", action="store_true", help="Apply min-max normalization to s0.")
+    parser.add_argument("--aop-rotate", action="store_true", help="Apply aop rotations to s0.")
+    parser.add_argument("--hist-shift", action="store_true", help="Apply histogram shifting to s0.")
+    parser.add_argument("--stack-modalities", action="store_true", help="Stack output modalities -> represent as a tensor.")
     parser.add_argument("--debug", action="store_true", help="Add debug print statements to see intermediate output.")
     return parser.parse_args()
 
