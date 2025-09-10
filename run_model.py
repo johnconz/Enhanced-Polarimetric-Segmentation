@@ -15,23 +15,17 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm as std_tqdm
 from functools import partial
 from torchinfo import summary
-import torchmetrics
 import time
 import numpy as np
-
-from dataset import MultiModalASLDataset 
-from UltraLight_VM_UNet import UltraLight_VM_UNet
-from sklearn.metrics import f1_score, precision_score, recall_score, jaccard_score
 import matplotlib.pyplot as plt
-from torchinfo import summary
+from clearml import Task, Logger
+import seaborn as sns
 
 import torch.nn.functional as F
 
-RANDOM_SEED = 42
-torch.manual_seed(RANDOM_SEED)
-torch.cuda.manual_seed(RANDOM_SEED)
-
-tqdm = partial(std_tqdm, dynamic_ncols=True)#!/usr/bin/env python3
+from dataset import MultiModalASLDataset 
+from UltraLight_VM_UNet import UltraLight_VM_UNet
+#from sklearn.metrics import f1_score, precision_score, recall_score, jaccard_score
 
 # For evaluation metrics
 from torchmetrics.classification import (
@@ -42,6 +36,12 @@ from torchmetrics.classification import (
     MulticlassJaccardIndex,
     MulticlassConfusionMatrix,
 )
+
+RANDOM_SEED = 42
+torch.manual_seed(RANDOM_SEED)
+torch.cuda.manual_seed(RANDOM_SEED)
+
+tqdm = partial(std_tqdm, dynamic_ncols=True)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Vision Mamba on ASL data.")
@@ -54,6 +54,7 @@ def parse_args():
                         help="List of modalities to use; " \
                         "options: s0, s1, s2, dolp, aop, enhanced_s0, s0e1, s0e2")
     parser.add_argument("--model-name", type=str, required=True)
+    parser.add_argument("--logger", action="store_true", help="Use ClearML for logging experiment results.")
     
     # --- For dataset specifications ---
     parser.add_argument("--raw-scale", action="store_true", help="Apply min-max scaling on raw intensity data.")
@@ -66,7 +67,7 @@ def parse_args():
 
 
 # --- Training and Testing Functions ---
-def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model"):
+def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model", logger: Logger=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     criterion = nn.CrossEntropyLoss().to(device)  # expects logits and class indices
@@ -114,6 +115,11 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
                 t.set_postfix(loss=avg_loss, accuracy=train_accuracy)
                 t.update(1)  # Increment the progress bar
 
+        # Log training metrics (every epoch)
+        if logger:
+            logger.report_scalar("train", "loss", iteration=epoch, value=avg_loss)
+            logger.report_scalar("train", "accuracy", iteration=epoch, value=train_accuracy)
+
         # Compute accuracy and loss by epoch
         epoch_avg_loss = running_loss / len(dataloader)
         epoch_train_accuracy = total_correct / total_pixels * 100.0
@@ -149,6 +155,11 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             avg_val_loss = val_loss / len(val_dataloader)
             val_accuracy = val_total_correct / val_total_pixels * 100.0
 
+            # Log validation metrics (every epoch)
+            if logger:
+                logger.report_scalar("val", "loss", iteration=epoch, value=avg_val_loss)
+                logger.report_scalar("val", "accuracy", iteration=epoch, value=val_accuracy)
+
             # Print metrics
             print(
                 f"Epoch [{epoch+1}/{args.epochs}], Loss: {epoch_avg_loss:.4f}, Accuracy: {epoch_train_accuracy:.2f}%, "
@@ -181,25 +192,25 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
 
 
 # NOTE: Not used in favor of torchmetrics
-def compute_iou(preds, targets, num_classes):
-    iou = []
-    for cls in range(num_classes):
-        intersection = ((preds == cls) & (targets == cls)).sum().item()
-        union = ((preds == cls) | (targets == cls)).sum().item()
-        iou.append(intersection / union if union > 0 else 0)
-    return iou
+# def compute_iou(preds, targets, num_classes):
+#     iou = []
+#     for cls in range(num_classes):
+#         intersection = ((preds == cls) & (targets == cls)).sum().item()
+#         union = ((preds == cls) | (targets == cls)).sum().item()
+#         iou.append(intersection / union if union > 0 else 0)
+#     return iou
 
 
-def test_model(args, model, dataloader, device):
+def test_model(args, model, dataloader, device, logger: Logger=None, class_names=None):
     model.eval()  # Set the model to evaluation mode
     criterion = nn.CrossEntropyLoss()  # Use the same loss function as during training
     test_loss = 0.0
-    total_correct = 0
-    total_pixels = 0
+    #total_correct = 0
+    #total_pixels = 0
     total_inference_time = 0.0
 
-    all_preds = []
-    all_masks = []
+    #all_preds = []
+    #all_masks = []
     
     # --- Use torchmetrics to compute metrics incrementally ---
     # Per-class metrics
@@ -307,6 +318,26 @@ def test_model(args, model, dataloader, device):
     print(f"Total Inference Time: {total_inference_time:.4f} seconds")
     #print(f"Per-class IoU: {compute_iou(all_preds, all_masks, args.num_classes)}")
 
+    # Report final metrics
+    if logger:
+        logger.report_scalar("test", "loss", value=avg_test_loss)
+        logger.report_scalar("test", "accuracy", value=test_accuracy)
+        logger.report_scalar("test", "mean IoU", value=mean_iou)
+        logger.report_scalar("test", "mean F1", value=mean_f1)
+
+        # Confusion matrix as heatmap
+        if class_names is None:
+            class_names = [str(i) for i in range(args.num_classes)]
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                    xticklabels=class_names, yticklabels=class_names, ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        logger.report_matplotlib_figure("test", "confusion_matrix", figure=fig)
+        plt.close(fig)
+
+
     #return avg_test_loss, test_accuracy, precision, recall, f1, iou
 
     return {
@@ -332,6 +363,11 @@ def main():
     min_max = args.min_max
     stack_modalities = args.stack_modalities
     debug = args.debug
+
+    if args.logger:
+        # Initialize ClearML task
+        task = Task.init(project_name="Vision Mamba ASL", task_name="Train Vision Mamba on ASL data")
+        logger = task.get_logger()
 
     # Initialize placeholders for enhanced parameters
     aop_mode = 0 # 0 = none, 1 = rotate, 2 = hist shift
@@ -429,7 +465,7 @@ def main():
         print(f"Training on device: {device}")
 
         # Train the model
-        train_model(args, model, train_loader, device, val_loader, model_name='{model_name}_best_accuracy_model.pt')
+        train_model(args, model, train_loader, device, val_loader, model_name='{model_name}_best_accuracy_model.pt', logger=logger)
 
         # Save the trained model
         torch.save(model.state_dict(), f"{model_name}.pt")
@@ -442,7 +478,7 @@ def main():
         model.load_state_dict(torch.load(f"{model_name}_best_accuracy_model.pt"))
         model.eval()
         
-        test_model(args, model, test_loader, device)
+        test_model(args, model, test_loader, device, logger=logger)
 
 if __name__ == "__main__":
     #print(torch.cuda.is_available())
