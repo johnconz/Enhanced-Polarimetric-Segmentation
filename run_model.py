@@ -5,6 +5,8 @@
 # ----------------------------------------------------------------------->
 
 #!/usr/bin/env python3
+
+# --- Handle Imports ---
 import argparse
 from pathlib import Path
 import torch
@@ -13,6 +15,7 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm as std_tqdm
 from functools import partial
 from torchinfo import summary
+import torchmetrics
 import time
 import numpy as np
 
@@ -29,6 +32,16 @@ torch.manual_seed(RANDOM_SEED)
 torch.cuda.manual_seed(RANDOM_SEED)
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)#!/usr/bin/env python3
+
+# For evaluation metrics
+from torchmetrics.classification import (
+    MulticlassAccuracy,
+    MulticlassPrecision,
+    MulticlassRecall,
+    MulticlassF1Score,
+    MulticlassJaccardIndex,
+    MulticlassConfusionMatrix,
+)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Vision Mamba on ASL data.")
@@ -167,6 +180,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             )
 
 
+# NOTE: Not used in favor of torchmetrics
 def compute_iou(preds, targets, num_classes):
     iou = []
     for cls in range(num_classes):
@@ -186,6 +200,21 @@ def test_model(args, model, dataloader, device):
 
     all_preds = []
     all_masks = []
+    
+    # --- Use torchmetrics to compute metrics incrementally ---
+    # Per-class metrics
+    acc_metric = MulticlassAccuracy(num_classes=args.num_classes, average='micro').to(device)
+    prec_metric = MulticlassPrecision(num_classes=args.num_classes, average=None).to(device) # per-class
+    rec_metric = MulticlassRecall(num_classes=args.num_classes, average=None).to(device) # per-class
+    f1_metric = MulticlassF1Score(num_classes=args.num_classes, average=None).to(device) # per-class
+    jacc_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
+    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes).to(device)
+
+    # Overall metrics
+    mean_prec_metric = MulticlassPrecision(num_classes=args.num_classes, average='macro').to(device)
+    mean_rec_metric = MulticlassRecall(num_classes=args.num_classes, average='macro').to(device)
+    mean_f1_metric = MulticlassF1Score(num_classes=args.num_classes, average='macro').to(device)
+    mean_iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average='macro').to(device)
 
     with torch.no_grad():  # Disable gradient calculation for testing
         #for images, onehot_masks in dataloader:
@@ -193,7 +222,7 @@ def test_model(args, model, dataloader, device):
             if args.stack_modalities:
                 data, masks, _ = batch
             else:
-                modalities_dict, masks, valid = batch
+                modalities_dict, masks, _ = batch
                 data = torch.cat([modalities_dict[i] for i in args.modalities], dim=1)
             data = data.to(device).float()
             masks = masks.to(device).long()
@@ -206,44 +235,93 @@ def test_model(args, model, dataloader, device):
             test_loss += loss.item()
 
             preds = torch.argmax(outputs, dim=1)
-            all_preds.append(preds.cpu().numpy())
-            all_masks.append(masks.cpu().numpy())
+            
+            # NOTE: Storing all predictions leads to out-of-memory error
+            # (Commented code is for manual metric computation)
+            #all_preds.append(preds.cpu().numpy())
+            #all_masks.append(masks.cpu().numpy())
 
-            total_correct += (preds == masks).sum().item()
-            total_pixels += torch.numel(masks)
+            # Update torchmetrics
+            acc_metric.update(preds, masks)
+            prec_metric.update(preds, masks)
+            rec_metric.update(preds, masks)
+            f1_metric.update(preds, masks)
+            jacc_metric.update(preds, masks)
+            cm_metric.update(preds, masks)
 
-    avg_test_loss = test_loss / len(dataloader)
-    test_accuracy = total_correct / total_pixels * 100.0
+            mean_prec_metric.update(preds, masks)
+            mean_rec_metric.update(preds, masks)
+            mean_f1_metric.update(preds, masks)
+            mean_iou_metric.update(preds, masks)
+
+            #total_correct += (preds == masks).sum().item()
+            #total_pixels += torch.numel(masks)
+
+    #avg_test_loss = test_loss / len(dataloader)
+    #test_accuracy = total_correct / total_pixels * 100.0
 
     # Flatten the lists of predictions and masks
-    all_preds = np.concatenate(all_preds).flatten()
-    all_masks = np.concatenate(all_masks).flatten()
+    #all_preds = np.concatenate(all_preds).flatten()
+    #all_masks = np.concatenate(all_masks).flatten()
 
     # Calculate Precision, Recall, and F1 Score
-    precision = precision_score(
-        all_masks, all_preds, average="weighted", zero_division=0
-    )
-    recall = recall_score(all_masks, all_preds, average="weighted", zero_division=0)
-    f1 = f1_score(all_masks, all_preds, average="weighted", zero_division=0)
+    #precision = precision_score(
+    #    all_masks, all_preds, average="weighted", zero_division=0
+    #)
+    #recall = recall_score(all_masks, all_preds, average="weighted", zero_division=0)
+    #f1 = f1_score(all_masks, all_preds, average="weighted", zero_division=0)
 
     # Calculate IoU
     # iou = compute_iou(all_preds, all_masks, [1, 2])
-    weighted_iou = jaccard_score(
-        all_masks, all_preds, average="weighted", zero_division=0
-    )
+    #weighted_iou = jaccard_score(
+    #    all_masks, all_preds, average="weighted", zero_division=0
+    #)
 
     # Compute per-class IoU
-    iou = jaccard_score(
-        all_masks, all_preds, average=None, zero_division=0
-    )
+    #iou = jaccard_score(
+    #    all_masks, all_preds, average=None, zero_division=0
+    #)
 
+    # Finalize torchmetrics
+    avg_test_loss = test_loss / len(dataloader)
+    test_accuracy = acc_metric.compute().item() * 100.0
+    precision = mean_prec_metric.compute().cpu().numpy()
+    recall = mean_rec_metric.compute().cpu().numpy()
+    f1 = mean_f1_metric.compute().cpu().numpy()
+    iou = mean_iou_metric.compute().cpu().numpy()
+    cm = cm_metric.compute().cpu().numpy()
+
+    mean_precision = mean_prec_metric.compute().item()
+    mean_recall = mean_rec_metric.compute().item()
+    mean_f1 = mean_f1_metric.compute().item()
+    mean_iou = mean_iou_metric.compute().item()
+
+    # Print + return metrics
     print(f"Test Loss: {avg_test_loss:.8f}, Test Accuracy: {test_accuracy:.2f}%")
-    print(f"Precision: {precision:.8f}, Recall: {recall:.8f}, F1 Score: {f1:.8f}")
-    print(f"Mean IoU: {weighted_iou}")
-    print(f"Per-class IoU: {compute_iou(all_preds, all_masks, args.num_classes)}")
+    print(f"Mean Precision: {mean_precision:.8f}, Mean Recall: {mean_recall:.8f}, Mean F1 Score: {mean_f1:.8f}, Mean IoU: {mean_iou:.8f}")
+    print(f"Per-class Precision: {precision}")
+    print(f"Per-class Recall: {recall}")
+    print(f"Per-class F1 Score: {f1}")
+    print(f"Per-class IoU: {iou}")
+    print(f"Confusion Matrix:\n{cm}")
     print(f"Total Inference Time: {total_inference_time:.4f} seconds")
+    #print(f"Per-class IoU: {compute_iou(all_preds, all_masks, args.num_classes)}")
 
-    return avg_test_loss, test_accuracy, precision, recall, f1, iou
+    #return avg_test_loss, test_accuracy, precision, recall, f1, iou
+
+    return {
+        "loss": avg_test_loss,
+        "accuracy": test_accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "iou": iou,
+        "mean_precision": mean_precision,
+        "mean_recall": mean_recall,
+        "mean_f1": mean_f1,
+        "mean_iou": mean_iou,
+        "confusion_matrix": cm,
+    }
 
 def main():
     # Take in command line arguments
@@ -321,7 +399,7 @@ def main():
     if args.stack_modalities:
         data, masks, _ = batch
     else:
-        data_dict, masks = batch
+        data_dict, masks, _ = batch
         data = torch.cat([data_dict[i] for i in args.modalities], dim=1)
 
     if args.debug:
@@ -367,4 +445,5 @@ def main():
         test_model(args, model, test_loader, device)
 
 if __name__ == "__main__":
+    #print(torch.cuda.is_available())
     main()
