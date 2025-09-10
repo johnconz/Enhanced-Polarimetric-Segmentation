@@ -207,7 +207,7 @@ def test_model(args, model, dataloader, device):
     prec_metric = MulticlassPrecision(num_classes=args.num_classes, average=None).to(device) # per-class
     rec_metric = MulticlassRecall(num_classes=args.num_classes, average=None).to(device) # per-class
     f1_metric = MulticlassF1Score(num_classes=args.num_classes, average=None).to(device) # per-class
-    jacc_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
+    iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
     cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes).to(device)
 
     # Overall metrics
@@ -246,7 +246,7 @@ def test_model(args, model, dataloader, device):
             prec_metric.update(preds, masks)
             rec_metric.update(preds, masks)
             f1_metric.update(preds, masks)
-            jacc_metric.update(preds, masks)
+            iou_metric.update(preds, masks)
             cm_metric.update(preds, masks)
 
             mean_prec_metric.update(preds, masks)
@@ -285,10 +285,10 @@ def test_model(args, model, dataloader, device):
     # Finalize torchmetrics
     avg_test_loss = test_loss / len(dataloader)
     test_accuracy = acc_metric.compute().item() * 100.0
-    precision = mean_prec_metric.compute().cpu().numpy()
-    recall = mean_rec_metric.compute().cpu().numpy()
-    f1 = mean_f1_metric.compute().cpu().numpy()
-    iou = mean_iou_metric.compute().cpu().numpy()
+    precision = prec_metric.compute().cpu().numpy()
+    recall = rec_metric.compute().cpu().numpy()
+    f1 = f1_metric.compute().cpu().numpy()
+    iou = iou_metric.compute().cpu().numpy()
     cm = cm_metric.compute().cpu().numpy()
 
     mean_precision = mean_prec_metric.compute().item()
@@ -429,7 +429,7 @@ def main():
         print(f"Training on device: {device}")
 
         # Train the model
-        train_model(args, model, train_loader, device, val_loader, model_name=model_name)
+        train_model(args, model, train_loader, device, val_loader, model_name='{model_name}_best_accuracy_model.pt')
 
         # Save the trained model
         torch.save(model.state_dict(), f"{model_name}.pt")
