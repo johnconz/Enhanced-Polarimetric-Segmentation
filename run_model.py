@@ -366,7 +366,7 @@ def main():
 
     if args.logger:
         # Initialize ClearML task
-        task = Task.init(project_name="Vision Mamba ASL", task_name="Train Vision Mamba on ASL data")
+        task = Task.init(project_name="Thesis Experiments", task_name="(TEST) VisionMamba- s0, s1, s2")
         logger = task.get_logger()
 
     # Initialize placeholders for enhanced parameters
