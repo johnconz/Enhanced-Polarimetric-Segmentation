@@ -171,7 +171,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             if val_accuracy > best_val_accuracy:
                 best_val_accuracy = val_accuracy
                 torch.save(
-                    model.state_dict(), f"{model_name}_best_accuracy_model.pt"
+                    model.state_dict(), f"{model_name}-best-accuracy-model.pt"
                 )
                 print(
                     f"Saved model with best validation accuracy: {best_val_accuracy:.2f}%"
@@ -180,7 +180,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             # Save the model if it has the lowest validation loss
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
-                torch.save(model.state_dict(), f"{model_name}_best_loss_model.pt")
+                torch.save(model.state_dict(), f"{model_name}-best-loss-model.pt")
                 print(
                     f"Saved model with lowest validation loss: {best_val_loss:.4f}"
                 )
