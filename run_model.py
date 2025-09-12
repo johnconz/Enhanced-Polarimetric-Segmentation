@@ -45,7 +45,7 @@ tqdm = partial(std_tqdm, dynamic_ncols=True)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Vision Mamba on ASL data.")
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num-classes", type=int, default=10)
@@ -55,6 +55,7 @@ def parse_args():
                         "options: s0, s1, s2, dolp, aop, enhanced_s0, s0e1, s0e2")
     parser.add_argument("--model-name", type=str, required=True)
     parser.add_argument("--logger", action="store_true", help="Use ClearML for logging experiment results.")
+    parser.add_argument("--task", type=str, default="test", help="ClearML task name.")
     
     # --- For dataset specifications ---
     parser.add_argument("--raw-scale", action="store_true", help="Apply min-max scaling on raw intensity data.")
@@ -366,7 +367,7 @@ def main():
 
     if args.logger:
         # Initialize ClearML task
-        task = Task.init(project_name="Thesis Experiments", task_name="(TEST) VisionMamba- s0, s1, s2")
+        task = Task.init(project_name="Thesis Experiments", task_name=args.task)
         logger = task.get_logger()
 
     # Initialize placeholders for enhanced parameters
@@ -431,7 +432,6 @@ def main():
     batch = next(iter(train_loader))
 
     # FOR DEBUG PRINT STATEMENTS
-
     if args.stack_modalities:
         data, masks, _ = batch
     else:
@@ -446,7 +446,7 @@ def main():
     # INITIALIZE MODEL + TRAINING
     # ----------------------------------------------------------------------->
 
-    model_name = f"{args.model_name}-model-polar-mam_batchsize-{args.batch_size}_epochs-{args.epochs}"
+    model_name = f"{args.model_name}-model-batchsize-{args.batch_size}-epochs-{args.epochs}"
 
     # Choose model
     model = UltraLight_VM_UNet(
@@ -458,24 +458,34 @@ def main():
             bridge=True,
         ).to(device)
 
-    # If the model exists, load it; otherwise, train it
+    # If the model exists, load it; otherwise, train and load it
     if not Path(f"{model_name}.pt").exists():
         print(f"{model_name}.pt does not exist! Training...")        
 
         print(f"Training on device: {device}")
 
         # Train the model
-        train_model(args, model, train_loader, device, val_loader, model_name='{model_name}_best_accuracy_model.pt', logger=logger)
+        train_model(args, model, train_loader, device, val_loader, model_name=model_name, logger=logger)
 
         # Save the trained model
         torch.save(model.state_dict(), f"{model_name}.pt")
 
-    else:
-        print(f"Loading existing model: {model_name}_best_accuracy_model.pt")
+        print(f"Loading existing model: {model_name}-best-accuracy-model.pt")
         
         # Output model info
         summary(model, input_size=tuple(data.shape))
-        model.load_state_dict(torch.load(f"{model_name}_best_accuracy_model.pt"))
+        model.load_state_dict(torch.load(f"{model_name}-best-accuracy-model.pt"))
+        model.eval()
+        
+        test_model(args, model, test_loader, device, logger=logger)
+
+    # Just test the model if alr exists
+    else:
+        print(f"Loading existing model: {model_name}-best-accuracy-model.pt")
+        
+        # Output model info
+        summary(model, input_size=tuple(data.shape))
+        model.load_state_dict(torch.load(f"{model_name}-best-accuracy-model.pt"))
         model.eval()
         
         test_model(args, model, test_loader, device, logger=logger)
