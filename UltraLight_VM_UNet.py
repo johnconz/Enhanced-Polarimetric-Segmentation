@@ -4,6 +4,29 @@ import torch.nn.functional as F
 
 from mamba_ssm import Mamba
 
+# Use instead of nn.Linear for better memory efficiency
+# Replace nn.Linear with Proj in Channel Attention bridge if needed
+class Proj(nn.Module):
+
+    def __init__(self, input_size, output_size, bias=True, init_scale=10):
+        super(Proj, self).__init__()
+        if init_scale is not None:
+            self.weight = nn.Parameter(torch.tensor(init_scale, dtype=torch.float32))
+        if bias:
+            self.bias = nn.Parameter(torch.empty(output_size).fill_(0))
+        self.proj = torch.empty(output_size, input_size).detach()  # Use detach to avoid gradients
+        torch.manual_seed(123)
+        nn.init.orthogonal_(self.proj)
+
+    def forward(self, x):
+        w = self.proj.to(x.device)  # Ensure the projection matrix is on the same device
+        x = x / x.norm(2, -1, keepdim=True)
+        out = nn.functional.linear(x, w)
+        if hasattr(self, 'weight'):
+            out = out * self.weight
+        if hasattr(self, 'bias'):
+            out = out + self.bias.view(1, -1)
+        return out
 
 class PVMLayer(nn.Module):
     def __init__(self, input_dim, output_dim, d_state=16, d_conv=4, expand=2):
