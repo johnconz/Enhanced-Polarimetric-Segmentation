@@ -259,11 +259,11 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
     if C != 5:
         raise ValueError(f"Third dimension of S must be 5 (s0, s1, s2, dolp, aop), got {C}")
 
-    print(f"[INFO] S.shape = {S.shape}  → num_frames = {num_frames}")
+    #print(f"[INFO] S.shape = {S.shape}  → num_frames = {num_frames}")
 
     # Initialize outputs
-    s0e1 = np.zeros((H, W, num_frames), dtype=np.float64)
-    s0e2 = np.zeros((H, W, num_frames), dtype=np.float64)
+    shape_enhancement = np.zeros((H, W, num_frames), dtype=np.float64)
+    shape_contrast_enhancement = np.zeros((H, W, num_frames), dtype=np.float64)
 
     for k in range(num_frames):
         SS = np.zeros((H, W, 5), dtype=np.float64)
@@ -280,8 +280,15 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
                                         channel_axis=None)
 
         # Derived Stokes products
-        SS[:, :, 3] = np.sqrt((SS[:, :, 1] / SS[:, :, 0])**2 +
-                                (SS[:, :, 2] / SS[:, :, 0])**2)
+        #SS[:, :, 3] = np.sqrt((SS[:, :, 1] / SS[:, :, 0])**2 +
+        #                        (SS[:, :, 2] / SS[:, :, 0])**2)
+        #SS[:, :, 4] = 0.5 * np.arctan2(SS[:, :, 2], SS[:, :, 1])
+        
+        # Avoid division by zero
+        S2_by_S0 = np.divide(SS[:, :, 2], SS[:, :, 0], out=np.zeros_like(SS[:, :, 2]), where=SS[:, :, 0]!=0)
+        S1_by_S0 = np.divide(SS[:, :, 1], SS[:, :, 0], out=np.zeros_like(SS[:, :, 1]), where=SS[:, :, 0]!=0)
+
+        SS[:, :, 3] = np.sqrt(S1_by_S0**2 + S2_by_S0**2)
         SS[:, :, 4] = 0.5 * np.arctan2(SS[:, :, 2], SS[:, :, 1])
 
         # Enhanced DoLP
@@ -313,10 +320,10 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
         mixture2 = imgscale(mixture2 ** (1 - np.maximum(dolpmap, aop_max * aopmap)))
 
         # Discount noisy polarimetric pixels
-        s0e1[:, :, k] = ((1 - saopc) * es0 + saopc * mixture1) * valid_pixels
-        s0e2[:, :, k] = ((1 - saopc) * es0 + saopc * mixture2) * valid_pixels
+        shape_enhancement[:, :, k] = ((1 - saopc) * es0 + saopc * mixture1) * valid_pixels
+        shape_contrast_enhancement[:, :, k] = ((1 - saopc) * es0 + saopc * mixture2) * valid_pixels
 
-    return es0, s0e1, s0e2
+    return es0, shape_enhancement, shape_contrast_enhancement
 
 
 

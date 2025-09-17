@@ -96,7 +96,7 @@ class Channel_Att_Bridge(nn.Module):
             else nn.Conv1d(c_list_sum, c_list[3], 1)
         )
         self.att5 = (
-            nn.Linear(c_list_sum, c_list[4])
+            Proj(c_list_sum, c_list[4])
             if split_att == "fc"
             else nn.Conv1d(c_list_sum, c_list[4], 1)
         )

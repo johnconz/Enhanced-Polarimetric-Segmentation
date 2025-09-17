@@ -37,7 +37,9 @@ from torchmetrics.classification import (
     MulticlassConfusionMatrix,
 )
 
+# Initialize constants and random seed
 RANDOM_SEED = 42
+CLASS_NAMES = ["Background", "Circular Panels", "Cones", "Cylinders", "Pyramids", "Square Panels", "Vehicles", "Tables", "Cases", "Tents"]
 torch.manual_seed(RANDOM_SEED)
 torch.cuda.manual_seed(RANDOM_SEED)
 
@@ -52,7 +54,7 @@ def parse_args():
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--modalities", nargs="+", default=["s0", "dolp", "aop"],
                         help="List of modalities to use; " \
-                        "options: s0, s1, s2, dolp, aop, enhanced_s0, s0e1, s0e2")
+                        "options: s0, s1, s2, dolp, aop, enhanced_s0, shape_enhancement, shape_contrast_enhancement")
     parser.add_argument("--model-name", type=str, required=True)
     parser.add_argument("--logger", action="store_true", help="Use ClearML for logging experiment results.")
     parser.add_argument("--task", type=str, default="test", help="ClearML task name.")
@@ -69,24 +71,34 @@ def parse_args():
 
 # --- Training and Testing Functions ---
 def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model", logger: Logger=None):
+    # --- Compute class weights dynamically from training set ---
+    print("[INFO] Computing class weights from training set...")
+    class_counts = torch.zeros(args.num_classes, dtype=torch.float32)
+    for batch in dataloader:
+        if args.stack_modalities:
+            _, masks, _ = batch
+        else:
+            _, masks, _ = batch
+        for c in range(args.num_classes):
+            class_counts[c] += (masks == c).sum().item()
+
+    class_weights = 1.0 / (class_counts + 1e-6)
+    class_weights = class_weights / class_weights.sum()  # normalize
+    print(f"[INFO] Using class weights: {class_weights.tolist()}")
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    criterion = nn.CrossEntropyLoss().to(device)  # expects logits and class indices
-
-    best_val_accuracy = 0.0
+    best_val_miou = 0.0  # track best mIoU instead of accuracy
     best_val_loss = float("inf")
 
     for epoch in range(args.epochs):
-
         model.train()
         running_loss = 0.0
         total_correct = 0
         total_pixels = 0
 
-        # Training loop
-        # Compute loss + accuracy across every mini-batch
         with tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{args.epochs}") as t:
-            #for images, onehot_masks in dataloader:
             for batch in dataloader:
                 if args.stack_modalities:
                     data, masks, _ = batch
@@ -100,7 +112,6 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
                 optimizer.zero_grad()
                 outputs = model(data)
                 loss = criterion(outputs, masks)
-
                 loss.backward()
                 optimizer.step()
 
@@ -112,84 +123,80 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
                 avg_loss = running_loss / (t.n + 1)
                 train_accuracy = total_correct / total_pixels * 100.0
 
-                # Update the progress bar with the current loss and accuracy
                 t.set_postfix(loss=avg_loss, accuracy=train_accuracy)
-                t.update(1)  # Increment the progress bar
+                t.update(1)
 
-        # Log training metrics (every epoch)
+        # Log training metrics
         if logger:
             logger.report_scalar("train", "loss", iteration=epoch, value=avg_loss)
             logger.report_scalar("train", "accuracy", iteration=epoch, value=train_accuracy)
 
-        # Compute accuracy and loss by epoch
         epoch_avg_loss = running_loss / len(dataloader)
-        epoch_train_accuracy = total_correct / total_pixels * 100.0
 
-        # Validation loop
-        val_loss = 0.0
-        val_total_correct = 0
-        val_total_pixels = 0
-
-        if val_dataloader is not None:
+        # --- Validation Every Few Epochs ---
+        if val_dataloader and epoch % 5 == 0:
             model.eval()
+            val_loss = 0.0
+            val_total_pixels = 0
+            val_total_correct = 0
+
+            # Initialize foreground metrics (ignore background class 0)
+            val_iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average="macro", ignore_index=0).to(device)
+            val_f1_metric = MulticlassF1Score(num_classes=args.num_classes, average="macro", ignore_index=0).to(device)
+
             with torch.no_grad():
-                #for images, onehot_masks in val_dataloader:
                 for batch in val_dataloader:
                     if args.stack_modalities:
                         data, masks, _ = batch
                     else:
                         modalities_dict, masks, _ = batch
                         data = torch.cat([modalities_dict[i] for i in args.modalities], dim=1)
-                    images = data.to(device, non_blocking=True)
-                    masks = masks.to(
-                        device, non_blocking=True
-                    )
 
-                    outputs = model(images)
+                    data = data.to(device, non_blocking=True).float()
+                    masks = masks.to(device, non_blocking=True).long()
+
+                    outputs = model(data)
                     loss = criterion(outputs, masks)
                     val_loss += loss.item()
 
                     preds = torch.argmax(outputs, dim=1)
+                    val_iou_metric.update(preds, masks)
+                    val_f1_metric.update(preds, masks)
+
                     val_total_correct += (preds == masks).sum().item()
                     val_total_pixels += torch.numel(masks)
 
             avg_val_loss = val_loss / len(val_dataloader)
             val_accuracy = val_total_correct / val_total_pixels * 100.0
+            val_miou = val_iou_metric.compute().item()
+            val_f1 = val_f1_metric.compute().item()
 
-            # Log validation metrics (every epoch)
             if logger:
                 logger.report_scalar("val", "loss", iteration=epoch, value=avg_val_loss)
                 logger.report_scalar("val", "accuracy", iteration=epoch, value=val_accuracy)
+                logger.report_scalar("val", "foreground_mIoU", iteration=epoch, value=val_miou)
+                logger.report_scalar("val", "foreground_F1", iteration=epoch, value=val_f1)
 
-            # Print metrics
             print(
-                f"Epoch [{epoch+1}/{args.epochs}], Loss: {epoch_avg_loss:.4f}, Accuracy: {epoch_train_accuracy:.2f}%, "
-                f"Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%"
+                f"Epoch [{epoch+1}/{args.epochs}] "
+                f"Train Loss: {epoch_avg_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
+                f"Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%, "
+                f"Val mIoU (no BG): {val_miou:.4f}, Val F1 (no BG): {val_f1:.4f}"
             )
 
-            # Save the model if it has the best validation accuracy
-            if val_accuracy > best_val_accuracy:
-                best_val_accuracy = val_accuracy
-                torch.save(
-                    model.state_dict(), f"{model_name}-best-accuracy-model.pt"
-                )
-                print(
-                    f"Saved model with best validation accuracy: {best_val_accuracy:.2f}%"
-                )
+            # --- Model Selection Based on Foreground mIoU ---
+            if val_miou > best_val_miou:
+                best_val_miou = val_miou
+                torch.save(model.state_dict(), f"{model_name}-best-miou-model.pt")
+                print(f"✅ Saved new best model (foreground mIoU: {best_val_miou:.4f})")
 
-            # Save the model if it has the lowest validation loss
+            # Still save based on lowest loss for reference
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
                 torch.save(model.state_dict(), f"{model_name}-best-loss-model.pt")
-                print(
-                    f"Saved model with lowest validation loss: {best_val_loss:.4f}"
-                )
 
-        # If no validation set, just print training metrics
         else:
-            print(
-                f"Epoch [{epoch+1}/{args.epochs}], Loss: {avg_loss:.4f}, Accuracy: {train_accuracy:.2f}%"
-            )
+            print(f"Epoch [{epoch+1}/{args.epochs}], Train Loss: {epoch_avg_loss:.4f}, Train Acc: {train_accuracy:.2f}%")
 
 
 # NOTE: Not used in favor of torchmetrics
@@ -220,7 +227,7 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
     rec_metric = MulticlassRecall(num_classes=args.num_classes, average=None).to(device) # per-class
     f1_metric = MulticlassF1Score(num_classes=args.num_classes, average=None).to(device) # per-class
     iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
-    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes).to(device)
+    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes, normalize="all").to(device)
 
     # Overall metrics
     mean_prec_metric = MulticlassPrecision(num_classes=args.num_classes, average='macro').to(device)
@@ -319,12 +326,24 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
     print(f"Total Inference Time: {total_inference_time:.4f} seconds")
     #print(f"Per-class IoU: {compute_iou(all_preds, all_masks, args.num_classes)}")
 
+    # Change to 2D array with one column per class
+    f1 = f1.reshape(-1, 1)
+    iou = iou.reshape(-1, 1)
+    precision = precision.reshape(-1, 1)
+    recall = recall.reshape(-1, 1)
+
     # Report final metrics
     if logger:
-        logger.report_scalar("test", "loss", value=avg_test_loss)
-        logger.report_scalar("test", "accuracy", value=test_accuracy)
-        logger.report_scalar("test", "mean IoU", value=mean_iou)
-        logger.report_scalar("test", "mean F1", value=mean_f1)
+        logger.report_single_value(name="Test Loss", value=avg_test_loss)
+        logger.report_single_value(name="Test Accuracy", value=test_accuracy)
+        logger.report_single_value(name="Mean Precision", value=mean_precision)
+        logger.report_single_value(name="Mean Recall", value=mean_recall)
+        logger.report_single_value(name="Mean IoU", value=mean_iou)
+        logger.report_single_value(name="Mean F1", value=mean_f1)
+        logger.report_vector(title="Per-class F1", series="Evaluation Metrics", values=f1, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class IoU", series="Evaluation Metrics", values=iou, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class Precision", series="Evaluation Metrics", values=precision, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class Recall", series="Evaluation Metrics", values=recall, labels=CLASS_NAMES)
 
         # Confusion matrix as heatmap
         if class_names is None:
@@ -424,9 +443,9 @@ def main():
     train_set, val_set, test_set = random_split(dataset, [num_train, num_val, num_test])
 
     # Create dataloaders
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, persistent_workers=True, prefetch_factor=4, pin_memory=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=4, persistent_workers=True)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=4, persistent_workers=True)
 
     # Load batches one at a time
     batch = next(iter(train_loader))
