@@ -81,11 +81,22 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             _, masks, _ = batch
         for c in range(args.num_classes):
             class_counts[c] += (masks == c).sum().item()
+    
+    # Use median frequency balancing to compute class weights
+    median_freq = torch.median(class_counts[class_counts > 0])
+    class_weights = median_freq / (class_counts + 1e-6)
+    class_weights = class_weights / class_weights.mean()  # normalize so mean weight is 1
 
-    class_weights = 1.0 / (class_counts + 1e-6)
-    class_weights = class_weights / class_weights.sum()  # normalize
+    # Inverse frequency
+    #class_weights = 1.0 / (class_counts + 1e-6)
+    #class_weights = class_weights / class_weights.sum()  # normalize
     print(f"[INFO] Using class weights: {class_weights.tolist()}")
 
+    # Since using manual seed, can use fixed class weights determined from full training set
+    # FOR INVERSE FREQ
+    #class_weights = torch.tensor([9.364e-05, 0.037, 0.326, 0.262, 0.266, 0.010, 0.002, 0.064, 0.030, 0.002], dtype=torch.float32)
+
+    # Pass class weights to penalize mistakes on small classes more
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
