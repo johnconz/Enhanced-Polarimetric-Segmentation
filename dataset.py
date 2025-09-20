@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset
 from pathlib import Path
 import hashlib
+from collections import OrderedDict
 import helper_functions as hf
 from ASL import ASL
 
@@ -13,7 +14,6 @@ S0_STD = 3
 DOLP_MAX = 1.0
 AOP_MAX = 0.5
 FUSION_COEFFICIENT = 0.5
-
 
 class MultiModalASLDataset(Dataset):
     def __init__(self,
@@ -28,11 +28,12 @@ class MultiModalASLDataset(Dataset):
                  stack_modalities: bool = False,
                  cache_dir: str = "/media/connor/nas-connor/cache",
                  enable_disk_cache: bool = True,
-                 enable_ram_cache: bool = True):
+                 enable_ram_cache: bool = True,
+                 max_ram_cache_size: int = 200):
         """
-        Hybrid cached version of the dataset.
-        - RAM cache: fastest, cleared when process ends.
-        - Disk cache: persists between runs, slower than RAM but faster than recomputing.
+        Hybrid dataset with LRU RAM cache + optional disk cache.
+
+        max_ram_cache_size: max number of frames to keep in RAM cache
         """
         self.asl_files = list(asl_files)
         self.mask_files = list(mask_files)
@@ -45,13 +46,14 @@ class MultiModalASLDataset(Dataset):
         self.stack_modalities = stack_modalities
         self.enable_disk_cache = enable_disk_cache
         self.enable_ram_cache = enable_ram_cache
+        self.max_ram_cache_size = max_ram_cache_size
 
         self.cache_dir = Path(cache_dir)
         if self.enable_disk_cache:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # in-memory cache (RAM)
-        self._ram_cache = {}
+        # LRU RAM cache: OrderedDict to evict oldest items
+        self._ram_cache = OrderedDict()
 
         self.index_map = []
         self._asl_headers = [ASL(f) for f in self.asl_files]
@@ -144,13 +146,18 @@ class MultiModalASLDataset(Dataset):
 
         # 1. Try RAM cache first
         if self.enable_ram_cache and cache_key in self._ram_cache:
+            # Move to end to mark as recently used
+            self._ram_cache.move_to_end(cache_key)
             return self._ram_cache[cache_key]
 
-        # 2. If not in RAM, try disk cache
+        # 2. Try disk cache
         if self.enable_disk_cache and cache_path.exists():
             result = torch.load(cache_path)
             if self.enable_ram_cache:
                 self._ram_cache[cache_key] = result
+                # enforce max size
+                if len(self._ram_cache) > self.max_ram_cache_size:
+                    self._ram_cache.popitem(last=False)
             return result
 
         # 3. Compute from scratch
@@ -162,11 +169,14 @@ class MultiModalASLDataset(Dataset):
 
         result = (modalities, mask, valid_pixels)
 
-        # Save to RAM
+        # Save to RAM cache
         if self.enable_ram_cache:
             self._ram_cache[cache_key] = result
+            # enforce max size
+            if len(self._ram_cache) > self.max_ram_cache_size:
+                self._ram_cache.popitem(last=False)
 
-        # Save to disk
+        # Save to disk cache
         if self.enable_disk_cache:
             torch.save(result, cache_path)
 

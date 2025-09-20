@@ -442,7 +442,7 @@ def main():
         min_max=min_max,
         debug=debug,
         stack_modalities=stack_modalities,
-        enable_disk_cache=True,
+        enable_disk_cache=False,
         enable_ram_cache=True,
     )
 
@@ -459,9 +459,9 @@ def main():
     train_set, val_set, test_set = random_split(dataset, [num_train, num_val, num_test])
 
     # Create dataloaders
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, persistent_workers=True, prefetch_factor=4, pin_memory=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=4, persistent_workers=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=4, persistent_workers=True)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2, prefetch_factor=2, persistent_workers=True, pin_memory=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=2, prefetch_factor=2, persistent_workers=True)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
     # Load batches one at a time
     batch = next(iter(train_loader))
