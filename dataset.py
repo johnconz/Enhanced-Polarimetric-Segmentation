@@ -27,14 +27,12 @@ class MultiModalASLDataset(Dataset):
                  debug: bool = False,
                  stack_modalities: bool = False,
                  cache_dir: str = "/media/connor/nas-connor/cache",
-                 enable_disk_cache: bool = False,
+                 enable_disk_cache: bool = True,
                  enable_ram_cache: bool = True):
         """
-        Dataset with hybrid RAM + disk caching.
-
-        cache_dir: Directory to store precomputed tensors (disk cache).
-        enable_disk_cache: If True, use disk cache (persistent across runs).
-        enable_ram_cache: If True, use RAM cache (fast within one run).
+        Hybrid cached version of the dataset.
+        - RAM cache: fastest, cleared when process ends.
+        - Disk cache: persists between runs, slower than RAM but faster than recomputing.
         """
         self.asl_files = list(asl_files)
         self.mask_files = list(mask_files)
@@ -45,7 +43,6 @@ class MultiModalASLDataset(Dataset):
         self.min_max = min_max
         self.debug = debug
         self.stack_modalities = stack_modalities
-
         self.enable_disk_cache = enable_disk_cache
         self.enable_ram_cache = enable_ram_cache
 
@@ -53,7 +50,7 @@ class MultiModalASLDataset(Dataset):
         if self.enable_disk_cache:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # RAM cache dict: key -> result
+        # in-memory cache (RAM)
         self._ram_cache = {}
 
         self.index_map = []
@@ -82,10 +79,13 @@ class MultiModalASLDataset(Dataset):
     def __len__(self):
         return len(self.index_map)
 
-    def _get_cache_path(self, file_idx, frame_idx):
-        """Generate unique cache filename for disk storage."""
-        key = f"{self.asl_files[file_idx]}_{frame_idx}_{'_'.join(self.modalities)}_{self.raw_scale}_{self.min_max}_{self.compute_enhanced}"
-        hashed = hashlib.md5(key.encode()).hexdigest()
+    def _get_cache_key(self, file_idx, frame_idx):
+        """Unique key for RAM cache."""
+        return f"{self.asl_files[file_idx]}_{frame_idx}_{'_'.join(self.modalities)}_{self.raw_scale}_{self.min_max}_{self.compute_enhanced}"
+
+    def _get_cache_path(self, cache_key):
+        """Disk cache filename."""
+        hashed = hashlib.md5(cache_key.encode()).hexdigest()
         return self.cache_dir / f"{hashed}.pt"
 
     def _compute_modalities(self, frame_data, valid_pixels, asl_obj):
@@ -139,33 +139,35 @@ class MultiModalASLDataset(Dataset):
 
     def __getitem__(self, idx):
         file_idx, frame_idx, mask_np, valid_np = self.index_map[idx]
-        key = (file_idx, frame_idx)
+        cache_key = self._get_cache_key(file_idx, frame_idx)
+        cache_path = self._get_cache_path(cache_key)
 
-        # RAM cache
-        if self.enable_ram_cache and key in self._ram_cache:
-            return self._ram_cache[key]
+        # 1. Try RAM cache first
+        if self.enable_ram_cache and cache_key in self._ram_cache:
+            return self._ram_cache[cache_key]
 
-        cache_path = self._get_cache_path(file_idx, frame_idx)
-
-        # Disk cache
+        # 2. If not in RAM, try disk cache
         if self.enable_disk_cache and cache_path.exists():
             result = torch.load(cache_path)
             if self.enable_ram_cache:
-                self._ram_cache[key] = result
+                self._ram_cache[cache_key] = result
             return result
 
-        # Compute from raw
+        # 3. Compute from scratch
         asl_obj = self._asl_headers[file_idx]
         frame_data, _, _ = asl_obj.get_data(frames=[frame_idx + 1])
         modalities = self._compute_modalities(frame_data, valid_np, asl_obj)
         mask = torch.from_numpy(mask_np).long()
         valid_pixels = torch.from_numpy(valid_np).bool()
+
         result = (modalities, mask, valid_pixels)
 
-        # Save to caches
+        # Save to RAM
+        if self.enable_ram_cache:
+            self._ram_cache[cache_key] = result
+
+        # Save to disk
         if self.enable_disk_cache:
             torch.save(result, cache_path)
-        if self.enable_ram_cache:
-            self._ram_cache[key] = result
 
         return result

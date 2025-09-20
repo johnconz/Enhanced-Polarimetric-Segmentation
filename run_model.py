@@ -442,7 +442,7 @@ def main():
         min_max=min_max,
         debug=debug,
         stack_modalities=stack_modalities,
-        enable_disk_cache=False,
+        enable_disk_cache=True,
         enable_ram_cache=True,
     )
 
