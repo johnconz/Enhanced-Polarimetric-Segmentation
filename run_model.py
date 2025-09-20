@@ -397,7 +397,7 @@ def main():
 
     if args.logger:
         # Initialize ClearML task
-        task = Task.init(project_name="Thesis Experiments", task_name=args.task)
+        task = Task.init(project_name="Thesis Experiments", task_name=args.task, auto_connect_frameworks=False)
         logger = task.get_logger()
 
     # Initialize placeholders for enhanced parameters
@@ -500,22 +500,22 @@ def main():
         # Save the trained model
         torch.save(model.state_dict(), f"{model_name}.pt")
 
-        print(f"Loading existing model: {model_name}-best-accuracy-model.pt")
+        print(f"Loading existing model: {model_name}-best-miou-model.pt")
         
         # Output model info
         summary(model, input_size=tuple(data.shape))
-        model.load_state_dict(torch.load(f"{model_name}-best-accuracy-model.pt"))
+        model.load_state_dict(torch.load(f"{model_name}-best-miou-model.pt"))
         model.eval()
         
         test_model(args, model, test_loader, device, logger=logger)
 
     # Just test the model if alr exists
     else:
-        print(f"Loading existing model: {model_name}-best-accuracy-model.pt")
+        print(f"Loading existing model: {model_name}-best-miou-model.pt")
         
         # Output model info
         summary(model, input_size=tuple(data.shape))
-        model.load_state_dict(torch.load(f"{model_name}-best-accuracy-model.pt"))
+        model.load_state_dict(torch.load(f"{model_name}-best-miou-model.pt"))
         model.eval()
         
         test_model(args, model, test_loader, device, logger=logger)
