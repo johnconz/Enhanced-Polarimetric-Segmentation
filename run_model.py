@@ -72,24 +72,27 @@ def parse_args():
 # --- Training and Testing Functions ---
 def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model", logger: Logger=None):
     # --- Compute class weights dynamically from training set ---
-    print("[INFO] Computing class weights from training set...")
-    class_counts = torch.zeros(args.num_classes, dtype=torch.float32)
-    for batch in dataloader:
-        if args.stack_modalities:
-            _, masks, _ = batch
-        else:
-            _, masks, _ = batch
-        for c in range(args.num_classes):
-            class_counts[c] += (masks == c).sum().item()
+    #print("[INFO] Computing class weights from training set...")
+    #class_counts = torch.zeros(args.num_classes, dtype=torch.float32)
+    #for batch in dataloader:
+    #    if args.stack_modalities:
+    #        _, masks, _ = batch
+    #    else:
+    #        _, masks, _ = batch
+    #    for c in range(args.num_classes):
+    #        class_counts[c] += (masks == c).sum().item()
     
     # Use median frequency balancing to compute class weights
-    median_freq = torch.median(class_counts[class_counts > 0])
-    class_weights = median_freq / (class_counts + 1e-6)
-    class_weights = class_weights / class_weights.mean()  # normalize so mean weight is 1
+    #median_freq = torch.median(class_counts[class_counts > 0])
+    #class_weights = median_freq / (class_counts + 1e-6)
+    #class_weights = class_weights / class_weights.mean()  # normalize so mean weight is 1
 
     # Inverse frequency
     #class_weights = 1.0 / (class_counts + 1e-6)
     #class_weights = class_weights / class_weights.sum()  # normalize
+
+    # Use already computed class weights from full training set
+    class_weights = torch.tensor([0.0009364112047478557, 0.3661355674266815, 3.2632901668548584, 2.6224074363708496, 2.659174680709839, 0.1016852855682373, 0.01724742352962494, 0.6431813836097717, 0.3034757375717163, 0.022466091439127922], dtype=torch.float32)
     print(f"[INFO] Using class weights: {class_weights.tolist()}")
 
     # Since using manual seed, can use fixed class weights determined from full training set
@@ -438,7 +441,9 @@ def main():
         raw_scale=raw_scale,
         min_max=min_max,
         debug=debug,
-        stack_modalities=stack_modalities
+        stack_modalities=stack_modalities,
+        enable_disk_cache=False,
+        enable_ram_cache=True,
     )
 
     # Get first sample of dataset
