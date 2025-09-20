@@ -361,7 +361,7 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
             class_names = [str(i) for i in range(args.num_classes)]
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+        sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues",
                     xticklabels=class_names, yticklabels=class_names, ax=ax)
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
