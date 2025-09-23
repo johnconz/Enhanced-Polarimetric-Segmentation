@@ -117,7 +117,7 @@ class MultiModalASLDataset(Dataset):
             aop = 0.5 * np.arctan2(s2, s1)
             output["aop"] = (aop + np.pi / 2) / np.pi
 
-        if self.modalities or "shape_enhancement" in self.modalities or "shape_contrast_enhancement" in self.modalities:
+        if self.compute_enhanced:
             es0, shape_enhancement, shape_contrast_enhancement = hf.compute_enhanceds0(
                 S, s0std=S0_STD, dolp_max=DOLP_MAX, aop_max=AOP_MAX,
                 fusion_coefficient=FUSION_COEFFICIENT,
