@@ -29,7 +29,7 @@ class MultiModalASLDataset(Dataset):
                  cache_dir: str = "/media/connor/nas-connor/cache",
                  enable_disk_cache: bool = True,
                  enable_ram_cache: bool = True,
-                 max_ram_cache_size: int = 200):
+                 max_ram_cache_size: int = 175):
         """
         Hybrid dataset with LRU RAM cache + optional disk cache.
 

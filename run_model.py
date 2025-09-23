@@ -459,9 +459,11 @@ def main():
     train_set, val_set, test_set = random_split(dataset, [num_train, num_val, num_test])
 
     # Create dataloaders
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2, prefetch_factor=2, persistent_workers=True, pin_memory=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=2, prefetch_factor=2, persistent_workers=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    # Re-enable persistent_workers, prefetch_factor, and pin_memory if num_workers > 0
+    # Works with num_workers=0 for debugging
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2, prefetch_factor=2, persistent_workers=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=1)
 
     # Load batches one at a time
     batch = next(iter(train_loader))
