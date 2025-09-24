@@ -456,8 +456,8 @@ def main():
     )
 
     # Training dataset with CutMix
-    rare_classes = [6, 9]  # Vehicles, Tents (adjust as needed)
-    cutmix_aug = CutMixSegmentation(probability=0.5, rare_classes=rare_classes)
+    rare_classes = [2, 3, 4]  # cones, cylinders, pyramids (adjust as needed)
+    cutmix_aug = CutMixSegmentation(probability=0.4, rare_classes=rare_classes)
 
     train_dataset = MultiModalASLDataset(
         data_dir, mask_dir,

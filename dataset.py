@@ -63,7 +63,6 @@ class CutMixSegmentation:
 
         return new_img, new_mask
 
-
 # -------------------------
 # Dataset Class
 # -------------------------
