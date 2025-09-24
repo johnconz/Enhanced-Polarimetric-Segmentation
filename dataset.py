@@ -28,7 +28,7 @@ class MultiModalASLDataset(Dataset):
                  stack_modalities: bool = False,
                  cache_dir: str = "/home/connor/Thesis/cache",
                  enable_disk_cache: bool = True,
-                 enable_ram_cache: bool = True,
+                 enable_ram_cache: bool = False,
                  max_ram_cache_size: int = 175):
         """
         Hybrid dataset with LRU RAM cache + optional disk cache.
