@@ -241,7 +241,7 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
     rec_metric = MulticlassRecall(num_classes=args.num_classes, average=None).to(device) # per-class
     f1_metric = MulticlassF1Score(num_classes=args.num_classes, average=None).to(device) # per-class
     iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
-    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes, normalize="all").to(device)
+    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes, normalize="column").to(device)
 
     # Overall metrics
     mean_prec_metric = MulticlassPrecision(num_classes=args.num_classes, average='macro').to(device)

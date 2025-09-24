@@ -26,7 +26,7 @@ class MultiModalASLDataset(Dataset):
                  min_max: bool = False,
                  debug: bool = False,
                  stack_modalities: bool = False,
-                 cache_dir: str = "/media/connor/nas-connor/cache",
+                 cache_dir: str = "/home/connor/Thesis/cache",
                  enable_disk_cache: bool = True,
                  enable_ram_cache: bool = True,
                  max_ram_cache_size: int = 175):
