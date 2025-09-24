@@ -80,7 +80,7 @@ class MultiModalASLDataset(Dataset):
                  stack_modalities: bool = False,
                  cache_dir: str = "/home/connor/Thesis/cache",
                  enable_disk_cache: bool = True,
-                 enable_ram_cache: bool = True,
+                 enable_ram_cache: bool = False,
                  max_ram_cache_size: int = 175,
                  cutmix_aug=None,
                  cutmix_active=False):   # <-- new args

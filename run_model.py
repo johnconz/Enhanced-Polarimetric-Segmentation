@@ -417,7 +417,6 @@ def main():
     mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
 
     if args.hist_shift:
-        # Bool to track whether to compute enhanced param.
         compute_enhanced = True
         aop_mode = 2
 
@@ -428,13 +427,12 @@ def main():
     if args.debug:
         debug = True
 
-    # Create a dataset
-    # Dataset shape: [batch_size, modalities, H, W]
-    # Mask shape: [batch_size, H, W] (class indices)
-    # valid_pixels shape: [batch_size, H, W] (boolean mask)
-    dataset = MultiModalASLDataset(
-        data_dir,
-        mask_dir,
+    # -------------------------
+    # Build three datasets
+    # -------------------------
+    from dataset import CutMixSegmentation
+
+    base_kwargs = dict(
         modalities=tuple(args.modalities),
         aop_mode=aop_mode,
         compute_enhanced=compute_enhanced,
@@ -442,33 +440,59 @@ def main():
         min_max=min_max,
         debug=debug,
         stack_modalities=stack_modalities,
-        enable_disk_cache=False,
-        enable_ram_cache=True,
+        enable_disk_cache=True,
+        enable_ram_cache=False,
     )
 
-    # Get first sample of dataset
-    # x, mask, valid = dataset[0] # x is [modalities, H, W]
+    # Training dataset with CutMix
+    rare_classes = [6, 9]  # Vehicles, Tents (adjust as needed)
+    cutmix_aug = CutMixSegmentation(probability=0.5, rare_classes=rare_classes)
 
-    # Define dataset paritions
-    num_total = len(dataset)
+    train_dataset = MultiModalASLDataset(
+        data_dir, mask_dir,
+        cutmix_aug=cutmix_aug,
+        cutmix_active=True,
+        **base_kwargs
+    )
+
+    # Validation + Test without CutMix
+    val_dataset = MultiModalASLDataset(
+        data_dir, mask_dir,
+        cutmix_active=False,
+        **base_kwargs
+    )
+    test_dataset = MultiModalASLDataset(
+        data_dir, mask_dir,
+        cutmix_active=False,
+        **base_kwargs
+    )
+
+    # -------------------------
+    # Split indices consistently
+    # -------------------------
+    num_total = len(train_dataset)
     num_train = int(0.7 * num_total)
     num_val = int(0.15 * num_total)
     num_test = num_total - num_train - num_val
 
-    # Randomly split dataset into training and validation sets
-    train_set, val_set, test_set = random_split(dataset, [num_train, num_val, num_test])
+    indices = list(range(num_total))
+    train_indices, val_indices, test_indices = torch.utils.data.random_split(
+        indices, [num_train, num_val, num_test]
+    )
 
-    # Create dataloaders
-    # Re-enable persistent_workers, prefetch_factor, and pin_memory if num_workers > 0
-    # Works with num_workers=0 for debugging
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2, prefetch_factor=2, persistent_workers=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=1)
+    train_set = torch.utils.data.Subset(train_dataset, train_indices)
+    val_set = torch.utils.data.Subset(val_dataset, val_indices)
+    test_set = torch.utils.data.Subset(test_dataset, test_indices)
 
-    # Load batches one at a time
+    # -------------------------
+    # DataLoaders
+    # -------------------------
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=2, persistent_workers=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=2, persistent_workers=True)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+    # Get sample batch for shape debugging
     batch = next(iter(train_loader))
-
-    # FOR DEBUG PRINT STATEMENTS
     if args.stack_modalities:
         data, masks, _ = batch
     else:
