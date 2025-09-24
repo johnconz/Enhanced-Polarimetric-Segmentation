@@ -141,9 +141,54 @@ class MultiModalASLDataset(Dataset):
         return self.cache_dir / f"{hashed}.pt"
 
     def _compute_modalities(self, frame_data, valid_pixels, asl_obj):
-        ...
-        # (no changes in this function)
-        ...
+        frame_data = frame_data.astype(np.float32)
+        if self.raw_scale:
+            frame_data = (frame_data - MIN_INTENSITY) / (MAX_INTENSITY - MIN_INTENSITY + 1e-8)
+
+        S = hf.compute_stokes(frame_data)
+        s0, s1, s2 = S[:, :, 0], S[:, :, 1], S[:, :, 2]
+
+        if self.min_max:
+            s0 = (s0 - np.min(s0)) / (np.max(s0) - np.min(s0) + 1e-8)
+        elif not self.raw_scale:
+            s0_log = np.log1p(s0)
+            s0 = (s0_log - np.min(s0_log)) / (np.max(s0_log) - np.min(s0_log) + 1e-8)
+
+        output = {}
+        if "s0" in self.modalities:
+            output["s0"] = s0
+        if "s1" in self.modalities:
+            output["s1"] = s1 / (s0 + 1e-8)
+        if "s2" in self.modalities:
+            output["s2"] = s2 / (s0 + 1e-8)
+        if "dolp" in self.modalities:
+            output["dolp"] = np.clip(np.sqrt(s1**2 + s2**2), 0, 1)
+        if "aop" in self.modalities:
+            aop = 0.5 * np.arctan2(s2, s1)
+            output["aop"] = (aop + np.pi / 2) / np.pi
+
+        if self.compute_enhanced:
+            es0, shape_enhancement, shape_contrast_enhancement = hf.compute_enhanceds0(
+                S, s0std=S0_STD, dolp_max=DOLP_MAX, aop_max=AOP_MAX,
+                fusion_coefficient=FUSION_COEFFICIENT,
+                valid_pixels=valid_pixels,
+                hdr=asl_obj,
+                aop_mode=self.aop_mode
+            )
+            if "enhanced_s0" in self.modalities:
+                output["enhanced_s0"] = es0
+            if "shape_enhancement" in self.modalities:
+                output["shape_enhancement"] = shape_enhancement.squeeze(-1)
+            if "shape_contrast_enhancement" in self.modalities:
+                output["shape_contrast_enhancement"] = shape_contrast_enhancement.squeeze(-1)
+
+        for k in output:
+            output[k] = torch.from_numpy(output[k]).unsqueeze(0).float()
+
+        if self.stack_modalities:
+            return torch.cat([output[k] for k in self.modalities if k in output], dim=0)
+
+        return output
 
     def __getitem__(self, idx):
         file_idx, frame_idx, mask_np, valid_np = self.index_map[idx]
