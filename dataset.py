@@ -106,14 +106,22 @@ class MultiModalASLDataset(Dataset):
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._ram_cache = OrderedDict()
+
+        # Store masks + headers in memory
+        self._mask_arrays = []
+        self._valid_arrays = []
         self.index_map = []
         self._asl_headers = [ASL(f) for f in self.asl_files]
+
 
         for file_idx, (asl_obj, mask_file) in enumerate(zip(self._asl_headers, self.mask_files)):
             hdr = asl_obj.get_header()
             with np.load(mask_file) as npz:
                 mask_array = npz["relabeled_masks"]
                 valid_pixels = npz["valid_pixels"]
+
+            self._mask_arrays.append(mask_array)
+            self._valid_arrays.append(valid_pixels)
 
             num_masks = mask_array.shape[-1]
             num_valid_pixels = valid_pixels.shape[-1]
@@ -125,8 +133,8 @@ class MultiModalASLDataset(Dataset):
                 self.index_map.append((
                     file_idx,
                     frame_idx,
-                    mask_array[:, :, az_idx],
-                    valid_pixels[:, :, vp_idx]
+                    az_idx,
+                    vp_idx
                 ))
 
     def __len__(self):
@@ -190,7 +198,16 @@ class MultiModalASLDataset(Dataset):
         return output
 
     def __getitem__(self, idx):
-        file_idx, frame_idx, mask_np, valid_np = self.index_map[idx]
+        file_idx, frame_idx, az_idx, vp_idx = self.index_map[idx]
+
+        # Build arrays from index map
+        mask_array = self._mask_arrays[file_idx]
+        valid_array = self._valid_arrays[file_idx]
+
+        mask_np = mask_array[:, :, az_idx]
+        valid_np = valid_array[:, :, vp_idx]
+
+        mask_np = self.mask_
         cache_key = self._get_cache_key(file_idx, frame_idx)
         cache_path = self._get_cache_path(cache_key)
 

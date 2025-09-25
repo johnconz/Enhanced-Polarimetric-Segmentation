@@ -97,12 +97,21 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
         class_weights = compute_augmented_class_weights(dataset, args.num_classes, num_samples=2000)
     else:
         print("[INFO] Using fixed precomputed class weights")
-        class_weights = torch.tensor([
-            0.0009364112047478557, 0.3661355674266815, 3.2632901668548584,
-            2.6224074363708496, 2.659174680709839, 0.1016852855682373,
-            0.01724742352962494, 0.6431813836097717, 0.3034757375717163,
-            0.022466091439127922
-        ], dtype=torch.float32)
+        # After median frequency balancing on full training set
+        #class_weights = torch.tensor([
+        #    0.0009364112047478557, 0.3661355674266815, 3.2632901668548584,
+        #    2.6224074363708496, 2.659174680709839, 0.1016852855682373,
+        #    0.01724742352962494, 0.6431813836097717, 0.3034757375717163,
+        #    0.022466091439127922
+        #], dtype=torch.float32)
+
+    
+        # After CutMix median frequency balancing
+        class_weights = torch.tensor([0.0010026864474639297, 0.3847227096557617, 3.213834524154663,
+            2.6751484870910645, 2.551990032196045, 0.10843880474567413, 
+            0.019780773669481277, 0.6874544620513916, 0.33227434754371643, 
+            0.02535284124314785], 
+        dtype=torch.float32)
 
     print(f"[INFO] Using class weights: {class_weights.tolist()}")
 
@@ -252,7 +261,7 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
     rec_metric = MulticlassRecall(num_classes=args.num_classes, average=None).to(device) # per-class
     f1_metric = MulticlassF1Score(num_classes=args.num_classes, average=None).to(device) # per-class
     iou_metric = MulticlassJaccardIndex(num_classes=args.num_classes, average=None).to(device) # per-class
-    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes, normalize="column").to(device)
+    cm_metric = MulticlassConfusionMatrix(num_classes=args.num_classes, normalize="true").to(device) # columns sum to 1
 
     # Overall metrics
     mean_prec_metric = MulticlassPrecision(num_classes=args.num_classes, average='macro').to(device)
@@ -457,7 +466,7 @@ def main():
 
     # Training dataset with CutMix
     rare_classes = [2, 3, 4]  # cones, cylinders, pyramids (adjust as needed)
-    cutmix_aug = CutMixSegmentation(probability=0.4, rare_classes=rare_classes)
+    cutmix_aug = CutMixSegmentation(probability=0.5, rare_classes=rare_classes)
 
     train_dataset = MultiModalASLDataset(
         data_dir, mask_dir,
@@ -498,9 +507,19 @@ def main():
     # -------------------------
     # DataLoaders
     # -------------------------
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=2, persistent_workers=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=2, persistent_workers=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=4, persistent_workers=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
+
+    print("len(index_map) =", len(val_dataset.index_map))
+    print("len(dataset) =", len(val_dataset))
+    for i in [0, len(val_dataset)-1]:
+        try:
+            _ = val_dataset[i]
+            print(f"Index {i} works")
+        except Exception as e:
+            print(f"Index {i} failed: {e}")
+
 
     # Get sample batch for shape debugging
     batch = next(iter(train_loader))
