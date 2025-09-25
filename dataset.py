@@ -201,60 +201,58 @@ class MultiModalASLDataset(Dataset):
         file_idx, frame_idx, az_idx, vp_idx = self.index_map[idx]
 
         # Build arrays from index map
-        mask_array = self._mask_arrays[file_idx]
-        valid_array = self._valid_arrays[file_idx]
+        mask_np = self._mask_arrays[file_idx][:, :, az_idx]
+        valid_np = self._valid_arrays[file_idx][:, :, vp_idx]
 
-        mask_np = mask_array[:, :, az_idx]
-        valid_np = valid_array[:, :, vp_idx]
-
-        mask_np = self.mask_
         cache_key = self._get_cache_key(file_idx, frame_idx)
         cache_path = self._get_cache_path(cache_key)
 
         # RAM cache
         if self.enable_ram_cache and cache_key in self._ram_cache:
             self._ram_cache.move_to_end(cache_key)
-            return self._ram_cache[cache_key]
-
+            modalities, mask, valid_pixels = self._ram_cache[cache_key]
         # Disk cache
-        if self.enable_disk_cache and cache_path.exists():
-            result = torch.load(cache_path)
+        elif self.enable_disk_cache and cache_path.exists():
+            modalities, mask, valid_pixels = torch.load(cache_path)
             if self.enable_ram_cache:
-                self._ram_cache[cache_key] = result
+                self._ram_cache[cache_key] = (modalities, mask, valid_pixels)
                 if len(self._ram_cache) > self.max_ram_cache_size:
                     self._ram_cache.popitem(last=False)
-            return result
+        # Compute from raw data
+        else:
+            asl_obj = self._asl_headers[file_idx]
+            frame_data, _, _ = asl_obj.get_data(frames=[frame_idx + 1])
+            modalities = self._compute_modalities(frame_data, valid_np, asl_obj)
+            mask = torch.from_numpy(mask_np).long()
+            valid_pixels = torch.from_numpy(valid_np).bool()
 
-        # Compute
-        asl_obj = self._asl_headers[file_idx]
-        frame_data, _, _ = asl_obj.get_data(frames=[frame_idx + 1])
-        modalities = self._compute_modalities(frame_data, valid_np, asl_obj)
-        mask = torch.from_numpy(mask_np).long()
-        valid_pixels = torch.from_numpy(valid_np).bool()
-        result = (modalities, mask, valid_pixels)
-
-        # Caching
-        if self.enable_ram_cache:
-            self._ram_cache[cache_key] = result
-            if len(self._ram_cache) > self.max_ram_cache_size:
-                self._ram_cache.popitem(last=False)
-        if self.enable_disk_cache:
-            torch.save(result, cache_path)
+            # Save cache
+            if self.enable_ram_cache:
+                self._ram_cache[cache_key] = (modalities, mask, valid_pixels)
+                if len(self._ram_cache) > self.max_ram_cache_size:
+                    self._ram_cache.popitem(last=False)
+            if self.enable_disk_cache:
+                torch.save((modalities, mask, valid_pixels), cache_path)
 
         # -------------------------
-        # Apply CutMix augmentation
+        # CutMix augmentation
         # -------------------------
         if self.cutmix_active and self.cutmix_aug is not None:
+            # Sample another random index
             j = random.randint(0, len(self.index_map) - 1)
-            file_idx2, frame_idx2, mask_np2, valid_np2 = self.index_map[j]
+            file_idx2, frame_idx2, az_idx2, vp_idx2 = self.index_map[j]
+
+            mask_np2 = self._mask_arrays[file_idx2][:, :, az_idx2]
+            valid_np2 = self._valid_arrays[file_idx2][:, :, vp_idx2]
+
             asl_obj2 = self._asl_headers[file_idx2]
             frame_data2, _, _ = asl_obj2.get_data(frames=[frame_idx2 + 1])
             modalities2 = self._compute_modalities(frame_data2, valid_np2, asl_obj2)
             mask2 = torch.from_numpy(mask_np2).long()
 
+            # Prepare tensors
             if self.stack_modalities:
-                img1 = modalities
-                img2 = modalities2
+                img1, img2 = modalities, modalities2
             else:
                 img1 = torch.cat([modalities[k] for k in self.modalities], dim=0)
                 img2 = torch.cat([modalities2[k] for k in self.modalities], dim=0)
@@ -262,9 +260,9 @@ class MultiModalASLDataset(Dataset):
             new_img, new_mask = self.cutmix_aug(img1, mask, img2, mask2)
 
             if self.stack_modalities:
-                result = (new_img, new_mask, valid_pixels)
+                return new_img, new_mask, valid_pixels
             else:
                 new_modalities = {k: new_img[i].unsqueeze(0) for i, k in enumerate(self.modalities)}
-                result = (new_modalities, new_mask, valid_pixels)
+                return new_modalities, new_mask, valid_pixels
 
-        return result
+        return modalities, mask, valid_pixels

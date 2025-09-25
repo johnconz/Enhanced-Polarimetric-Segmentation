@@ -91,12 +91,14 @@ def compute_augmented_class_weights(dataset, num_classes=10, num_samples=5000):
 # --- Training and Testing Functions ---
 def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model", logger: Logger=None):
     # Determine class weights
-    dataset = dataloader.dataset.dataset  # unwrap Subset -> underlying dataset
-    if hasattr(dataset, "cutmix_active") and dataset.cutmix_active:
-        print("[INFO] Recomputing class weights with CutMix augmentation...")
-        class_weights = compute_augmented_class_weights(dataset, args.num_classes, num_samples=2000)
-    else:
-        print("[INFO] Using fixed precomputed class weights")
+    #dataset = dataloader.dataset.dataset  # unwrap Subset -> underlying dataset
+    #if hasattr(dataset, "cutmix_active") and dataset.cutmix_active:
+    #    print("[INFO] Recomputing class weights with CutMix augmentation...")
+    #    class_weights = compute_augmented_class_weights(dataset, args.num_classes, num_samples=2000)
+    #else:
+    
+    # USED FIXED WEIGHTS TO SAVE TIME FOR NOW
+    print("[INFO] Using fixed precomputed class weights")
         # After median frequency balancing on full training set
         #class_weights = torch.tensor([
         #    0.0009364112047478557, 0.3661355674266815, 3.2632901668548584,
@@ -106,12 +108,12 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
         #], dtype=torch.float32)
 
     
-        # After CutMix median frequency balancing
-        class_weights = torch.tensor([0.0010026864474639297, 0.3847227096557617, 3.213834524154663,
-            2.6751484870910645, 2.551990032196045, 0.10843880474567413, 
-            0.019780773669481277, 0.6874544620513916, 0.33227434754371643, 
-            0.02535284124314785], 
-        dtype=torch.float32)
+    # After CutMix median frequency balancing
+    class_weights = torch.tensor([0.0010026864474639297, 0.3847227096557617, 3.213834524154663,
+        2.6751484870910645, 2.551990032196045, 0.10843880474567413, 
+        0.019780773669481277, 0.6874544620513916, 0.33227434754371643, 
+        0.02535284124314785], 
+    dtype=torch.float32)
 
     print(f"[INFO] Using class weights: {class_weights.tolist()}")
 
