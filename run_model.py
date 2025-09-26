@@ -90,12 +90,12 @@ def compute_augmented_class_weights(dataset, num_classes=10, num_samples=5000):
 
 # --- Training and Testing Functions ---
 def train_model(args, model, dataloader, device, val_dataloader=None, model_name="model", logger: Logger=None):
-    # Determine class weights
-    #dataset = dataloader.dataset.dataset  # unwrap Subset -> underlying dataset
-    #if hasattr(dataset, "cutmix_active") and dataset.cutmix_active:
-    #    print("[INFO] Recomputing class weights with CutMix augmentation...")
-    #    class_weights = compute_augmented_class_weights(dataset, args.num_classes, num_samples=2000)
-    #else:
+    
+    # Activate cutmix for training ONLY
+    if hasattr(dataloader.dataset, 'dataset'):  # if Subset (created from random_split)
+        dataloader.dataset.dataset.cutmix_active = True
+    else:
+        dataloader.dataset.cutmix_active = True
     
     # USED FIXED WEIGHTS TO SAVE TIME FOR NOW
     print("[INFO] Using fixed precomputed class weights")
@@ -171,6 +171,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
 
         # --- Validation Every Few Epochs ---
         if val_dataloader and epoch % 5 == 0:
+
             model.eval()
             val_loss = 0.0
             val_total_pixels = 0
@@ -466,45 +467,31 @@ def main():
         enable_ram_cache=False,
     )
 
+    full_dataset = MultiModalASLDataset(
+        data_dir, mask_dir,
+        cutmix_aug=None,  # initially disabled
+        cutmix_active=False,
+        **base_kwargs
+    )
+
     # Training dataset with CutMix
     rare_classes = [2, 3, 4]  # cones, cylinders, pyramids (adjust as needed)
-    cutmix_aug = CutMixSegmentation(probability=0.5, rare_classes=rare_classes)
+    cutmix_aug = CutMixSegmentation(dataset=full_dataset, probability=0.5, rare_classes=rare_classes)
 
-    train_dataset = MultiModalASLDataset(
-        data_dir, mask_dir,
-        cutmix_aug=cutmix_aug,
-        cutmix_active=True,
-        **base_kwargs
-    )
+    full_dataset.cutmix_aug = cutmix_aug  # enable CutMix augmentation
 
-    # Validation + Test without CutMix
-    val_dataset = MultiModalASLDataset(
-        data_dir, mask_dir,
-        cutmix_active=False,
-        **base_kwargs
-    )
-    test_dataset = MultiModalASLDataset(
-        data_dir, mask_dir,
-        cutmix_active=False,
-        **base_kwargs
-    )
 
     # -------------------------
     # Split indices consistently
     # -------------------------
-    num_total = len(train_dataset)
+    num_total = len(full_dataset)
     num_train = int(0.7 * num_total)
     num_val = int(0.15 * num_total)
     num_test = num_total - num_train - num_val
 
-    indices = list(range(num_total))
-    train_indices, val_indices, test_indices = torch.utils.data.random_split(
-        indices, [num_train, num_val, num_test]
+    train_set, val_set, test_set = torch.utils.data.random_split(
+        full_dataset, [num_train, num_val, num_test],
     )
-
-    train_set = torch.utils.data.Subset(train_dataset, train_indices)
-    val_set = torch.utils.data.Subset(val_dataset, val_indices)
-    test_set = torch.utils.data.Subset(test_dataset, test_indices)
 
     # -------------------------
     # DataLoaders
@@ -512,15 +499,6 @@ def main():
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=4, persistent_workers=True)
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
-
-    print("len(index_map) =", len(val_dataset.index_map))
-    print("len(dataset) =", len(val_dataset))
-    for i in [0, len(val_dataset)-1]:
-        try:
-            _ = val_dataset[i]
-            print(f"Index {i} works")
-        except Exception as e:
-            print(f"Index {i} failed: {e}")
 
 
     # Get sample batch for shape debugging
@@ -557,6 +535,10 @@ def main():
 
         print(f"Training on device: {device}")
 
+        # --- Enable CutMix for training, disable for validation ---
+        train_loader.dataset.dataset.cutmix_active = True
+        val_loader.dataset.dataset.cutmix_active = False
+
         # Train the model
         train_model(args, model, train_loader, device, val_loader, model_name=model_name, logger=logger)
 
@@ -564,6 +546,9 @@ def main():
         torch.save(model.state_dict(), f"{model_name}.pt")
 
         print(f"Loading existing model: {model_name}-best-miou-model.pt")
+
+        # --- Disable CutMix for testing ---
+        test_loader.dataset.dataset.cutmix_active = False
         
         # Output model info
         summary(model, input_size=tuple(data.shape))
@@ -575,6 +560,9 @@ def main():
     # Just test the model if alr exists
     else:
         print(f"Loading existing model: {model_name}-best-miou-model.pt")
+
+        # --- Disable CutMix for testing ---
+        test_loader.dataset.dataset.cutmix_active = False
         
         # Output model info
         summary(model, input_size=tuple(data.shape))
