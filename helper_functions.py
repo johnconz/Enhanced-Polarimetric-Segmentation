@@ -17,6 +17,9 @@ from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 import ASL
 
+# Limit OpenCV to 1 thread per worker process
+cv2.setNumThreads(1)
+
 def disk_structure(radius):
     """Create a disk-shaped structuring element."""
     L = int(np.ceil(2*radius + 1))
