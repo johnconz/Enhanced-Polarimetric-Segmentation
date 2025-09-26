@@ -7,7 +7,8 @@
 # ----------------------------------------------------------------------->
 
 import math
-from skimage.restoration import denoise_bilateral # for 'imbilatfilt" MATLAB equivalent
+#from skimage.restoration import denoise_bilateral # for 'imbilatfilt" MATLAB equivalent
+import cv2
 from skimage import data
 import numpy as np
 from scipy.ndimage import binary_dilation
@@ -269,15 +270,22 @@ def compute_enhanceds0(S, s0std, dolp_max, aop_max, fusion_coefficient,
         SS = np.zeros((H, W, 5), dtype=np.float64)
 
         # Scale s0 and denoise s1/s2
+        # Single threaded and SLOWER than MATLAB imbilatfilt
         SS[:, :, 0] = S[:, :, 0, k]
-        SS[:, :, 1] = denoise_bilateral(S[:, :, 1, k].astype(np.float64),
-                                        sigma_color=100,
-                                        sigma_spatial=2,
-                                        channel_axis=None)
-        SS[:, :, 2] = denoise_bilateral(S[:, :, 2, k].astype(np.float64),
-                                        sigma_color=100,
-                                        sigma_spatial=2,
-                                        channel_axis=None)
+        #SS[:, :, 1] = denoise_bilateral(S[:, :, 1, k].astype(np.float64),
+        #                                sigma_color=100,
+        #                                sigma_spatial=2,
+        #                                channel_axis=None)
+        #SS[:, :, 2] = denoise_bilateral(S[:, :, 2, k].astype(np.float64),
+        #                                sigma_color=100,
+        #                                sigma_spatial=2,
+        #                                channel_axis=None)
+
+        # Try OpenCV bilateral filter (faster, multi-threaded)
+        SS[:, :, 1] = cv2.bilateralFilter(S[:, :, 1, k].astype(np.float32),
+                                          d=5, sigmaColor=100, sigmaSpace=2)
+        SS[:, :, 2] = cv2.bilateralFilter(S[:, :, 2, k].astype(np.float32),
+                                          d=5, sigmaColor=100, sigmaSpace=2)
 
         # Derived Stokes products
         #SS[:, :, 3] = np.sqrt((SS[:, :, 1] / SS[:, :, 0])**2 +

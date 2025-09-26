@@ -6,7 +6,9 @@ import hashlib
 from collections import OrderedDict
 import helper_functions as hf
 from ASL import ASL
-import random  # <-- added
+import random
+from filelock import FileLock # For safe multi-process caching
+import os
 
 MIN_INTENSITY = 1
 MAX_INTENSITY = 4094.0
@@ -218,22 +220,29 @@ class MultiModalASLDataset(Dataset):
 
         cache_key = self._get_cache_key(file_idx, frame_idx)
         cache_path = self._get_cache_path(cache_key)
+        lock_path = str(cache_path) + ".lock"
 
         # RAM cache
         if self.enable_ram_cache and cache_key in self._ram_cache:
             self._ram_cache.move_to_end(cache_key)
             return self._ram_cache[cache_key]
 
-        # Disk cache
+        # Disk cache: safe load with FileLock
         if self.enable_disk_cache and cache_path.exists():
-            result = torch.load(cache_path)
+            # Acquire lock for read (other processes will also use the same FileLock)
+            lock = FileLock(lock_path)
+            with lock:
+                # Force load on CPU - avoids CUDA device differences across workers
+                result = torch.load(cache_path, map_location="cpu")
+
+            # Optionally populate RAM cache
             if self.enable_ram_cache:
                 self._ram_cache[cache_key] = result
                 if len(self._ram_cache) > self.max_ram_cache_size:
                     self._ram_cache.popitem(last=False)
             return result
 
-        # Compute modalities
+        # Compute modalities (heavy work may happen here)
         asl_obj = self._asl_headers[file_idx]
         frame_data, _, _ = asl_obj.get_data(frames=[frame_idx + 1])
         modalities = self._compute_modalities(frame_data, valid_np, asl_obj)
@@ -241,13 +250,20 @@ class MultiModalASLDataset(Dataset):
         valid_pixels = torch.from_numpy(valid_np).bool()
         result = (modalities, mask, valid_pixels)
 
-        # Cache
+        # Cache to RAM/Disk safely
         if self.enable_ram_cache:
             self._ram_cache[cache_key] = result
             if len(self._ram_cache) > self.max_ram_cache_size:
                 self._ram_cache.popitem(last=False)
+
         if self.enable_disk_cache:
-            torch.save(result, cache_path)
+            tmp_path = str(cache_path) + ".tmp"
+            lock = FileLock(lock_path)
+            with lock:
+                # save to a tmp file first, then atomically replace
+                torch.save(result, tmp_path)
+                # os.replace is atomic on most OSes
+                os.replace(tmp_path, cache_path)
 
         # Apply CutMix
         if self.cutmix_active and self.cutmix_aug is not None:
