@@ -448,7 +448,7 @@ def main():
     # DATASET PREPARATION
     # ----------------------------------------------------------------------->
 
-    data_dir = Path('/media/connor/MATLAB/data').glob('*.asl.hdr')
+    data_dir = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
     mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
 
     if args.hist_shift:
