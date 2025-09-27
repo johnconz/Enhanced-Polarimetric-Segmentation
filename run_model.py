@@ -127,6 +127,9 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
 
     best_val_miou = 0.0  # track best mIoU instead of accuracy
     best_val_loss = float("inf")
+    early_stop_counter = 0
+    early_stop_patience = 3  # stop if no improvement in 3 validation checks
+    early_stop_delta = 0.01 # minimum change to qualify as improvement
 
     for epoch in range(args.epochs):
         model.train()
@@ -222,10 +225,19 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
             )
 
             # --- Model Selection Based on Foreground mIoU ---
-            if val_miou > best_val_miou:
+            if val_miou > best_val_miou + early_stop_delta:
                 best_val_miou = val_miou
+                early_stop_counter = 0  # reset counter
                 torch.save(model.state_dict(), f"{model_name}-best-miou-model.pt")
                 print(f"✅ Saved new best model (foreground mIoU: {best_val_miou:.4f})")
+            else:
+                early_stop_counter += 1
+                print(f"⏸️ No significant improvement in mIoU. Early stop counter: {early_stop_counter}/{early_stop_patience}")
+
+            if early_stop_counter >= early_stop_patience:
+                print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+                break
+
 
             # Still save based on lowest loss for reference
             if avg_val_loss < best_val_loss:
@@ -436,7 +448,7 @@ def main():
     # DATASET PREPARATION
     # ----------------------------------------------------------------------->
 
-    data_dir = Path('/home/connor/MATLAB/data').glob('*.asl.hdr')
+    data_dir = Path('/media/connor/nas-connor/MATLAB/MATLAB/data').glob('*.asl.hdr')
     mask_dir = Path('/home/connor/Thesis/updated_masks').glob('*.npz')
 
     if args.hist_shift:
