@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from pathlib import Path
-import hashlib
 from collections import OrderedDict
 import helper_functions as hf
 from ASL import ASL
@@ -106,7 +105,8 @@ class MultiModalASLDataset(Dataset):
                  enable_ram_cache=False,
                  max_ram_cache_size=175,
                  cutmix_aug=None,
-                 cutmix_active=False):
+                 cutmix_active=False,
+                 visualize_cutmix=False):
         self.asl_files = list(asl_files)
         self.mask_files = list(mask_files)
         self.modalities = modalities
@@ -121,6 +121,7 @@ class MultiModalASLDataset(Dataset):
         self.max_ram_cache_size = max_ram_cache_size
         self.cutmix_aug = cutmix_aug
         self.cutmix_active = cutmix_active
+        self.visualize_cutmix = visualize_cutmix
 
         self.cache_dir = Path(cache_dir)
         if self.enable_disk_cache:
@@ -183,10 +184,14 @@ class MultiModalASLDataset(Dataset):
             s0 = (s0_log - np.min(s0_log)) / (np.max(s0_log) - np.min(s0_log) + 1e-8)
 
         output = {}
-        if "s0" in self.modalities: output["s0"] = s0
-        if "s1" in self.modalities: output["s1"] = s1 / (s0 + 1e-8)
-        if "s2" in self.modalities: output["s2"] = s2 / (s0 + 1e-8)
-        if "dolp" in self.modalities: output["dolp"] = np.clip(np.sqrt(s1**2 + s2**2), 0, 1)
+        if "s0" in self.modalities: 
+            output["s0"] = s0
+        if "s1" in self.modalities: 
+            output["s1"] = s1 / (s0 + 1e-8)
+        if "s2" in self.modalities: 
+            output["s2"] = s2 / (s0 + 1e-8)
+        if "dolp" in self.modalities: 
+            output["dolp"] = np.clip(np.sqrt(s1**2 + s2**2), 0, 1)
         if "aop" in self.modalities:
             aop = 0.5 * np.arctan2(s2, s1)
             output["aop"] = (aop + np.pi / 2) / np.pi
@@ -199,12 +204,17 @@ class MultiModalASLDataset(Dataset):
                 hdr=asl_obj,
                 aop_mode=self.aop_mode
             )
-            if "enhanced_s0" in self.modalities: output["enhanced_s0"] = es0
-            if "shape_enhancement" in self.modalities: output["shape_enhancement"] = shape_enh.squeeze(-1)
-            if "shape_contrast_enhancement" in self.modalities: output["shape_contrast_enhancement"] = shape_contr.squeeze(-1)
+            if "enhanced_s0" in self.modalities: 
+                output["enhanced_s0"] = es0
+            if "shape_enhancement" in self.modalities: 
+                output["shape_enhancement"] = shape_enh.squeeze(-1)
+            if "shape_contrast_enhancement" in self.modalities: 
+                output["shape_contrast_enhancement"] = shape_contr.squeeze(-1)
 
-        for k in output: output[k] = torch.from_numpy(output[k]).unsqueeze(0).float()
-        if self.stack_modalities: return torch.cat([output[k] for k in self.modalities if k in output], dim=0)
+        for k in output: 
+            output[k] = torch.from_numpy(output[k]).unsqueeze(0).float()
+        if self.stack_modalities: 
+            return torch.cat([output[k] for k in self.modalities if k in output], dim=0)
         return output
 
     def __getitem__(self, idx):
@@ -272,6 +282,11 @@ class MultiModalASLDataset(Dataset):
             else:
                 img1 = torch.cat([modalities[k] for k in self.modalities], dim=0)
             new_img, new_mask = self.cutmix_aug(img1, mask)
+
+            # Visualize CutMix result
+            if self.visualize_cutmix:
+                hf.visualize_cutmix(mask, new_mask)
+                self.visualize_cutmix = False  # Only visualize once
             if self.stack_modalities:
                 result = (new_img, new_mask, valid_pixels)
             else:

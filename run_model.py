@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from clearml import Task, Logger
 import seaborn as sns
 import random
+import helper_functions as hf
 
 import torch.nn.functional as F
 
@@ -67,6 +68,7 @@ def parse_args():
     parser.add_argument("--hist-shift", action="store_true", help="Apply histogram shifting to s0.")
     parser.add_argument("--stack-modalities", action="store_true", help="Stack output modalities -> represent as a tensor.")
     parser.add_argument("--debug", action="store_true", help="Add debug print statements to see intermediate output.")
+    parser.add_argument("--visualize", action="store_true", help="Visualize cutmix applied to training masks and predicted/actual test masks.")
     return parser.parse_args()
 
 # For dynamic class weighting
@@ -205,6 +207,12 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
 
                     val_total_correct += (preds == masks).sum().item()
                     val_total_pixels += torch.numel(masks)
+
+                    # Visualize predicted vs actual masks for first sample of batch of first epoch
+                    if args.visualize and batch == 0 and epoch == 0:
+                         pred_mask = preds[0]
+                         true_mask = masks[0]
+                         hf.visualize_masks(pred_mask, true_mask, title="Predicted vs. Actual Masks")
 
             avg_val_loss = val_loss / len(val_dataloader)
             val_accuracy = val_total_correct / val_total_pixels * 100.0
@@ -483,6 +491,7 @@ def main():
         data_dir, mask_dir,
         cutmix_aug=None,  # initially disabled
         cutmix_active=False,
+        visualize_cutmix=args.visualize,
         **base_kwargs
     )
 

@@ -6,19 +6,122 @@
 # A variety of helper functions for Stokes and custom parameter calculations.
 # ----------------------------------------------------------------------->
 
-import math
 #from skimage.restoration import denoise_bilateral # for 'imbilatfilt" MATLAB equivalent
 import cv2
-from skimage import data
 import numpy as np
-from scipy.ndimage import binary_dilation
+import torch
 from scipy.signal import convolve2d
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
-import ASL
 
 # Limit OpenCV to 1 thread per worker process
 cv2.setNumThreads(1)
+
+# Visualize predicted vs true test mask
+def visualize_masks(pred_mask, true_mask=None, color_map=None, alpha=0.5, title=None):
+    """
+    Visualize predicted vs. ground truth masks with color mapping.
+
+    Args:
+        pred_mask (np.ndarray or torch.Tensor): Predicted mask (H×W) with class indices.
+        true_mask (np.ndarray or torch.Tensor, optional): Ground truth mask (H×W).
+        color_map (dict or list, optional): Maps class index → RGB tuple (0–255).
+        alpha (float): Transparency for overlay.
+        title (str): Optional title for the plot.
+    """
+    # Convert tensors to numpy
+    if torch.is_tensor(pred_mask):
+        pred_mask = pred_mask.detach().cpu().numpy()
+    if true_mask is not None and torch.is_tensor(true_mask):
+        true_mask = true_mask.detach().cpu().numpy()
+
+    # Default colormap (up to 10 classes)
+    if color_map is None:
+        color_map = {
+            0: (0, 0, 0),       # background - black
+            1: (255, 0, 0),     # class 1 - red
+            2: (0, 255, 0),     # class 2 - green
+            3: (0, 0, 255),     # class 3 - blue
+            4: (255, 255, 0),   # yellow
+            5: (255, 0, 255),   # magenta
+            6: (0, 255, 255),   # cyan
+        }
+
+    def map_colors(mask):
+        rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
+        for k, v in color_map.items():
+            rgb[mask == k] = v
+        return rgb
+
+    pred_rgb = map_colors(pred_mask)
+
+    plt.figure(figsize=(10, 5))
+
+    if true_mask is not None:
+        true_rgb = map_colors(true_mask)
+        # Show side-by-side
+        plt.subplot(1, 2, 1)
+        plt.imshow(true_rgb)
+        plt.title("Ground Truth")
+        plt.axis('off')
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(pred_rgb)
+        plt.title("Prediction")
+        plt.axis('off')
+    else:
+        plt.imshow(pred_rgb)
+        plt.axis('off')
+
+    if title:
+        plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+
+def visualize_cutmix(mask1, mask2, lam, color_map=None):
+    """
+    Visualize the result of applying CutMix to two masks.
+    mask1, mask2: np.ndarray or torch.Tensor (H×W)
+    lam: mixing coefficient (0–1)
+    """
+    if torch.is_tensor(mask1):
+        mask1 = mask1.cpu().numpy()
+    if torch.is_tensor(mask2):
+        mask2 = mask2.cpu().numpy()
+
+    if color_map is None:
+        color_map = {
+            0: (0, 0, 0),
+            1: (255, 0, 0),
+            2: (0, 255, 0),
+            3: (0, 0, 255),
+            4: (255, 255, 0),
+        }
+
+    def map_colors(mask):
+        rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
+        for k, v in color_map.items():
+            rgb[mask == k] = v
+        return rgb
+
+    mix_rgb = (lam * map_colors(mask1) + (1 - lam) * map_colors(mask2)).astype(np.uint8)
+
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 3, 1)
+    plt.imshow(map_colors(mask1))
+    plt.title("Mask 1")
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(map_colors(mask2))
+    plt.title("Mask 2")
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(mix_rgb)
+    plt.title(f"CutMix (λ={lam:.2f})")
+    plt.axis('off')
+    plt.show()
 
 def disk_structure(radius):
     """Create a disk-shaped structuring element."""
