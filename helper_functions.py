@@ -60,9 +60,9 @@ def circshift_aop_histmax(aop: np.ndarray, valid_pixels=None) -> np.ndarray:
 
     # If not given, assume all pixels are valid
     if valid_pixels is None:
-        validPixelMask = np.ones_like(aop, dtype=int)
+        valid_pixels = np.ones_like(aop, dtype=int)
         
-    idx = validPixelMask == 1
+    idx = valid_pixels == 1
 
     v = np.linspace(-np.pi/2, np.pi/2, 180)
 
@@ -80,12 +80,12 @@ def circshift_aop_histmax(aop: np.ndarray, valid_pixels=None) -> np.ndarray:
 
     if shift > 0:
         # Wrap values that go below -π/2
-        wrap_idx = np.where(aop - shift < -np.pi/2)[0]
-        aop_shifted[wrap_idx] = aop[wrap_idx] + np.pi - shift
+        rows, cols = np.where(aop - shift < -np.pi/2)
+        aop_shifted[rows, cols] = aop[rows, cols] + np.pi - shift
     else:
         # Wrap values that go above +π/2
-        wrap_idx = np.where(aop - shift > np.pi/2)[0]
-        aop_shifted[wrap_idx] = aop[wrap_idx] - np.pi - shift
+        rows, cols = np.where(aop - shift > np.pi/2)
+        aop_shifted[rows, cols] = aop[rows, cols] - np.pi - shift
 
     return aop_shifted
 

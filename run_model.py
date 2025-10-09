@@ -129,7 +129,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
     best_val_loss = float("inf")
     early_stop_counter = 0
     early_stop_patience = 3  # stop if no improvement in 3 validation checks
-    early_stop_delta = 0.01 # minimum change to qualify as improvement
+    early_stop_delta = 0.002 # minimum change to qualify as improvement
 
     for epoch in range(args.epochs):
         model.train()
@@ -258,7 +258,7 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
 #     return iou
 
 
-def test_model(args, model, dataloader, device, logger: Logger=None, class_names=None):
+def test_model(args, model, dataloader, device, logger: Logger=None, class_names=CLASS_NAMES):
     model.eval()  # Set the model to evaluation mode
     criterion = nn.CrossEntropyLoss()  # Use the same loss function as during training
     test_loss = 0.0
@@ -509,7 +509,7 @@ def main():
     # DataLoaders
     # -------------------------
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=4, persistent_workers=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=8, prefetch_factor=4)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=4, prefetch_factor=2)
     #val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
