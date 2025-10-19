@@ -397,10 +397,10 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
         logger.report_single_value(name="Mean Recall", value=mean_recall)
         logger.report_single_value(name="Mean IoU", value=mean_iou)
         logger.report_single_value(name="Mean F1", value=mean_f1)
-        logger.report_vector(title="Per-class F1", series="Evaluation Metrics", values=f1, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class IoU", series="Evaluation Metrics", values=iou, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class Precision", series="Evaluation Metrics", values=precision, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class Recall", series="Evaluation Metrics", values=recall, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class F1", series="Evaluation Metrics", xaxis="Class", yaxis="F1", values=f1, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class IoU", series="Evaluation Metrics", xaxis="Class", yaxis="IoU", values=iou, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class Precision", series="Evaluation Metrics", xaxis="Class", yaxis="Precision", values=precision, labels=CLASS_NAMES)
+        logger.report_vector(title="Per-class Recall", series="Evaluation Metrics", xaxis="Class", yaxis="Recall", values=recall, labels=CLASS_NAMES)
 
         # Confusion matrix as heatmap
         if class_names is None:
@@ -411,7 +411,7 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
                     xticklabels=class_names, yticklabels=class_names, ax=ax)
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
-        logger.report_matplotlib_figure("test", "confusion_matrix", figure=fig)
+        logger.report_matplotlib_figure(title="Confusion Matrix", figure=fig)
         plt.close(fig)
 
 
@@ -517,7 +517,7 @@ def main():
     # -------------------------
     # DataLoaders
     # -------------------------
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=4, persistent_workers=True)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=2, persistent_workers=True)
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=4, prefetch_factor=2)
     #val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
