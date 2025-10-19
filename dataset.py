@@ -101,7 +101,7 @@ class MultiModalASLDataset(Dataset):
                  debug=False,
                  stack_modalities=False,
                  cache_dir="/home/connor/Thesis/cache",
-                 enable_disk_cache=True,
+                 enable_disk_cache=False,
                  enable_ram_cache=False,
                  max_ram_cache_size=175,
                  cutmix_aug=None,
