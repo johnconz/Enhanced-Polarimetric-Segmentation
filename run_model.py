@@ -39,6 +39,9 @@ from torchmetrics.classification import (
     MulticlassConfusionMatrix,
 )
 
+# For LaTeX text in plots
+plt.rcParams['text.usetex'] = True
+
 # Initialize constants and random seed
 RANDOM_SEED = 42
 CLASS_NAMES = ["Background", "Circular Panels", "Cones", "Cylinders", "Pyramids", "Square Panels", "Vehicles", "Tables", "Cases", "Tents"]
@@ -69,7 +72,50 @@ def parse_args():
     parser.add_argument("--stack-modalities", action="store_true", help="Stack output modalities -> represent as a tensor.")
     parser.add_argument("--debug", action="store_true", help="Add debug print statements to see intermediate output.")
     parser.add_argument("--visualize", action="store_true", help="Visualize cutmix applied to training masks and predicted/actual test masks.")
+    parser.add_argument("--title", type=str, default="Experiment", help="Title for logging and figure naming.")
     return parser.parse_args()
+
+def save_and_log_vector_plot(
+    logger,
+    title: str,
+    series: str,
+    xaxis: str,
+    yaxis: str,
+    values,
+    labels,
+    save_dir="figures"
+):
+    """
+    Save a barplot of a vector metric as PNG and log it to ClearML.
+    """
+    #Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    # --- 1️⃣ Plot locally with Seaborn ---
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x=labels, y=values.squeeze(), ax=ax, palette="viridis")
+    ax.set_xlabel(xaxis)
+    ax.set_ylabel(yaxis)
+    ax.set_title(title)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+
+    # --- 2️⃣ Save locally ---
+    save_path = Path(save_dir) / f"{title.replace(' ', '_').lower()}.png"
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"[INFO] Saved vector figure to {save_path}")
+
+    # --- 3️⃣ Log to ClearML ---
+    logger.report_vector(
+        title=title,
+        series=series,
+        xaxis=xaxis,
+        yaxis=yaxis,
+        values=values,
+        labels=labels
+    )
+    logger.report_matplotlib_figure(title=title, series=f"{series} (PNG)", figure=fig)
+
+    plt.close(fig)
 
 # For dynamic class weighting
 def compute_augmented_class_weights(dataset, num_classes=10, num_samples=5000):
@@ -397,10 +443,11 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
         logger.report_single_value(name="Mean Recall", value=mean_recall)
         logger.report_single_value(name="Mean IoU", value=mean_iou)
         logger.report_single_value(name="Mean F1", value=mean_f1)
-        logger.report_vector(title="Per-class F1", series="Evaluation Metrics", xaxis="Class", yaxis="F1", values=f1, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class IoU", series="Evaluation Metrics", xaxis="Class", yaxis="IoU", values=iou, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class Precision", series="Evaluation Metrics", xaxis="Class", yaxis="Precision", values=precision, labels=CLASS_NAMES)
-        logger.report_vector(title="Per-class Recall", series="Evaluation Metrics", xaxis="Class", yaxis="Recall", values=recall, labels=CLASS_NAMES)
+        save_and_log_vector_plot(logger, title=f"{args.title} Per-class F1", series="Evaluation Metrics", xaxis="Class", yaxis="F1", values=f1, labels=CLASS_NAMES)
+        save_and_log_vector_plot(logger, title=f"{args.title} Per-class IoU", series="Evaluation Metrics", xaxis="Class", yaxis="IoU", values=iou, labels=CLASS_NAMES)
+        save_and_log_vector_plot(logger, title=f"{args.title} Per-class Precision", series="Evaluation Metrics", xaxis="Class", yaxis="Precision", values=precision, labels=CLASS_NAMES)
+        save_and_log_vector_plot(logger, title=f"{args.title} Per-class Recall", series="Evaluation Metrics", xaxis="Class", yaxis="Recall", values=recall, labels=CLASS_NAMES)
+
 
         # Confusion matrix as heatmap
         if class_names is None:
@@ -411,7 +458,11 @@ def test_model(args, model, dataloader, device, logger: Logger=None, class_names
                     xticklabels=class_names, yticklabels=class_names, ax=ax)
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
-        logger.report_matplotlib_figure(title="Confusion Matrix", figure=fig)
+        ax.set_title(f"{args.title} Confusion Matrix")
+
+        # Save as figure too
+        plt.savefig(f"{args.title}_confusion_matrix.png", dpi=300, bbox_inches="tight")
+        logger.report_matplotlib_figure(title="Test Confusion Matrix", series="Confusion Matrix", figure=fig)
         plt.close(fig)
 
 
@@ -483,7 +534,7 @@ def main():
         min_max=min_max,
         debug=debug,
         stack_modalities=stack_modalities,
-        enable_disk_cache=True,
+        enable_disk_cache=False,
         enable_ram_cache=False,
     )
 
