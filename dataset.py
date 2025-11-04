@@ -76,18 +76,39 @@ class CutMixSegmentation:
         if not isinstance(mask2, torch.Tensor):
             mask2 = torch.from_numpy(mask2)
 
+        #mask1before = mask1.clone()
+
         # Random patch size and position
         H, W = mask1.shape[-2:]
         cut_h = random.randint(self.min_size, min(self.max_size, H))
         cut_w = random.randint(self.min_size, min(self.max_size, W))
-        cy = random.randint(0, H - cut_h)
-        cx = random.randint(0, W - cut_w)
+
+        # Choose rare class pixels
+        rare_mask = torch.zeros_like(mask2, dtype=torch.bool)
+        for c in self.rare_classes:
+            rare_mask |= (mask2 == c)
+
+        rare_pixels = rare_mask.nonzero(as_tuple=False)
+        if rare_pixels.numel() == 0:
+            return img1, mask1, None, None
+        cy, cx = rare_pixels[random.randint(0, len(rare_pixels) - 1)].tolist()
+
+        # Compute patch bounds
+        cy_h = max(0, cy - cut_h // 2)
+        cx_w = max(0, cx - cut_w // 2)
+        cy_h2 = min(H, cy_h + cut_h)
+        cx_w2 = min(H, cx_w + cut_w)
+        cut_h, cut_w = cy_h2 - cy_h, cx_w2 - cx_w
+
+        # Pick random spot to paste cut patch
+        py = random.randint(0, H - cut_h)
+        px = random.randint(0, W - cut_w)
 
         # Cut and paste patch from img2/mask2 into img1/mask1
-        img1[..., cy:cy+cut_h, cx:cx+cut_w] = img2[..., cy:cy+cut_h, cx:cx+cut_w]
-        mask1[..., cy:cy+cut_h, cx:cx+cut_w] = mask2[..., cy:cy+cut_h, cx:cx+cut_w]
+        img1[..., py:py+cut_h, px:px+cut_w] = img2[..., cy_h:cy_h2, cx_w:cx_w2]
+        mask1[..., py:py+cut_h, px:px+cut_w] = mask2[..., cy_h:cy_h2, cx_w:cx_w2]
 
-        return img1, mask1, (cx, cy, cut_w, cut_h)
+        return img1, mask1, mask2, (px, py, cut_w, cut_h)
 
 
 class MultiModalASLDataset(Dataset):
@@ -288,7 +309,7 @@ class MultiModalASLDataset(Dataset):
             if self.visualize_cutmix:
                 if cutmask is not None:
                     hf.visualize_cutmix(mask, new_mask, cutmask, box=box)
-                    self.visualize_cutmix = False  # Only visualize once
+                    #self.visualize_cutmix = False  # Only visualize once
                 else:
                     print("[CutMix] No CutMix applied for this sample.") 
             if self.stack_modalities:
