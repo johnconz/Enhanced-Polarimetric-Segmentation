@@ -569,7 +569,7 @@ def main():
     # DataLoaders
     # -------------------------
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8, prefetch_factor=2, persistent_workers=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=4, prefetch_factor=2)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     #val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
 

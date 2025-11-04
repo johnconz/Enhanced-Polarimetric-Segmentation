@@ -38,13 +38,9 @@ def visualize_masks(pred_mask, true_mask=None, color_map=None, alpha=0.5, title=
     # Default colormap (up to 10 classes)
     if color_map is None:
         color_map = {
-            0: (0, 0, 0),       # background - black
-            1: (255, 0, 0),     # class 1 - red
-            2: (0, 255, 0),     # class 2 - green
-            3: (0, 0, 255),     # class 3 - blue
-            4: (255, 255, 0),   # yellow
-            5: (255, 0, 255),   # magenta
-            6: (0, 255, 255),   # cyan
+            0: (0, 0, 0), 1: (255, 0, 0), 2: (0, 255, 0), 3: (0, 0, 255),
+            4: (255, 255, 0), 5: (255, 0, 255), 6: (0, 255, 255),
+            7: (128, 128, 128), 8: (255, 165, 0), 9: (255, 255, 255)
         }
 
     def map_colors(mask):
@@ -78,24 +74,25 @@ def visualize_masks(pred_mask, true_mask=None, color_map=None, alpha=0.5, title=
     plt.tight_layout()
     plt.show()
 
-def visualize_cutmix(mask1, mask2, lam, color_map=None):
+def visualize_cutmix(mask1_before, mask1_after, mask2, color_map=None, box=None):
     """
-    Visualize the result of applying CutMix to two masks.
-    mask1, mask2: np.ndarray or torch.Tensor (H×W)
-    lam: mixing coefficient (0–1)
+    Visualize the result of CutMix showing the swapped region.
+    mask1, mask2: (H×W) arrays or tensors
+    lam: float (mix coefficient)
+    box: (cx, cy, w, h) tuple indicating patch location
     """
-    if torch.is_tensor(mask1):
-        mask1 = mask1.cpu().numpy()
+    if torch.is_tensor(mask1_before):
+        mask1_before = mask1_before.cpu().numpy()
+    if torch.is_tensor(mask1_after):
+        mask1_after = mask1_after.cpu().numpy()
     if torch.is_tensor(mask2):
         mask2 = mask2.cpu().numpy()
 
     if color_map is None:
         color_map = {
-            0: (0, 0, 0),
-            1: (255, 0, 0),
-            2: (0, 255, 0),
-            3: (0, 0, 255),
-            4: (255, 255, 0),
+            0: (0, 0, 0), 1: (255, 0, 0), 2: (0, 255, 0), 3: (0, 0, 255),
+            4: (255, 255, 0), 5: (255, 0, 255), 6: (0, 255, 255),
+            7: (128, 128, 128), 8: (255, 165, 0), 9: (255, 255, 255)
         }
 
     def map_colors(mask):
@@ -104,23 +101,34 @@ def visualize_cutmix(mask1, mask2, lam, color_map=None):
             rgb[mask == k] = v
         return rgb
 
-    mix_rgb = (lam * map_colors(mask1) + (1 - lam) * map_colors(mask2)).astype(np.uint8)
+    mask1_before_rgb = map_colors(mask1_before)
+    mask1_after_rgb = map_colors(mask1_after)
+    mask2_rgb = map_colors(mask2)
 
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
-    plt.imshow(map_colors(mask1))
-    plt.title("Mask 1")
+    plt.imshow(mask1_before_rgb)
+    plt.title("Original Mask (Before CutMix)")
     plt.axis('off')
 
     plt.subplot(1, 3, 2)
-    plt.imshow(map_colors(mask2))
-    plt.title("Mask 2")
+    plt.imshow(mask2_rgb)
+    plt.title("Cut Patch From Second Mask")
     plt.axis('off')
 
     plt.subplot(1, 3, 3)
-    plt.imshow(mix_rgb)
-    plt.title(f"CutMix (λ={lam:.2f})")
+    plt.imshow(mask1_after_rgb)
+    plt.title("Updated Mask (After CutMix)")
+
+    # --- Draw rectangle for the cut region ---
+    if box is not None:
+        cx, cy, w, h = box
+        rect = plt.Rectangle((cx, cy), w, h, linewidth=2, edgecolor='red', facecolor='none')
+        plt.gca().add_patch(rect)
+        plt.text(cx, cy - 5, 'Cut region', color='red', fontsize=10, backgroundcolor='white')
+
     plt.axis('off')
+    plt.tight_layout()
     plt.show()
 
 def disk_structure(radius):

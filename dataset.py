@@ -47,23 +47,24 @@ class CutMixSegmentation:
     def __call__(self, img1, mask1):
         # Skip augmentation most of the time
         if random.random() > self.probability or not self.rare_classes:
-            return img1, mask1
+            return img1, mask1, None, None
 
-        # If first mask doesn't contain rare class, skip
-        if not self.contains_rare_class(mask1):
-            return img1, mask1
+        # DO NOT NEED TO CHECK IF img1/mask1 CONTAINS RARE CLASS
+        #if not self.contains_rare_class(mask1):
+        #    return img1, mask1
 
-        # Try a few times to find a second sample that also has rare class
-        max_attempts = 5
+        # Try to find a second image/mask with rare class
+        max_attempts = 100
         for _ in range(max_attempts):
             idx2 = random.randint(0, len(self.dataset) - 1)
             img2, mask2, *_ = self.dataset[idx2]
 
             if self.contains_rare_class(mask2):
+                print(f"[CutMix] Pasting from index {idx2}.")
                 break
         else:
             # If no suitable partner found, skip CutMix
-            return img1, mask1
+            return img1, mask1, None, None
 
         # Convert to tensors if not already
         if not isinstance(img1, torch.Tensor):
@@ -86,7 +87,7 @@ class CutMixSegmentation:
         img1[..., cy:cy+cut_h, cx:cx+cut_w] = img2[..., cy:cy+cut_h, cx:cx+cut_w]
         mask1[..., cy:cy+cut_h, cx:cx+cut_w] = mask2[..., cy:cy+cut_h, cx:cx+cut_w]
 
-        return img1, mask1
+        return img1, mask1, (cx, cy, cut_w, cut_h)
 
 
 class MultiModalASLDataset(Dataset):
@@ -281,12 +282,15 @@ class MultiModalASLDataset(Dataset):
                 img1 = modalities
             else:
                 img1 = torch.cat([modalities[k] for k in self.modalities], dim=0)
-            new_img, new_mask = self.cutmix_aug(img1, mask)
+            new_img, new_mask, cutmask, box = self.cutmix_aug(img1, mask)
 
             # Visualize CutMix result
             if self.visualize_cutmix:
-                hf.visualize_cutmix(mask, new_mask)
-                self.visualize_cutmix = False  # Only visualize once
+                if cutmask is not None:
+                    hf.visualize_cutmix(mask, new_mask, cutmask, box=box)
+                    self.visualize_cutmix = False  # Only visualize once
+                else:
+                    print("[CutMix] No CutMix applied for this sample.") 
             if self.stack_modalities:
                 result = (new_img, new_mask, valid_pixels)
             else:
