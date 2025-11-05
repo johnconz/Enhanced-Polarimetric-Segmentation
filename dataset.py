@@ -303,12 +303,15 @@ class MultiModalASLDataset(Dataset):
                 img1 = modalities
             else:
                 img1 = torch.cat([modalities[k] for k in self.modalities], dim=0)
+
+            # Save copy of og mask for visualization
+            mask_before = mask.clone()
             new_img, new_mask, cutmask, box = self.cutmix_aug(img1, mask)
 
             # Visualize CutMix result
             if self.visualize_cutmix:
                 if cutmask is not None:
-                    hf.visualize_cutmix(mask, new_mask, cutmask, box=box)
+                    hf.visualize_cutmix(mask_before, new_mask, cutmask, box=box)
                     #self.visualize_cutmix = False  # Only visualize once
                 else:
                     print("[CutMix] No CutMix applied for this sample.") 

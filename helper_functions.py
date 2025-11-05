@@ -74,6 +74,19 @@ def visualize_masks(pred_mask, true_mask=None, color_map=None, alpha=0.5, title=
     plt.tight_layout()
     plt.show()
 
+def draw_rare_box(mask, rgb_img, rare_classes):
+    mask_np = mask.astype(np.uint8)
+    rare_mask = np.zeros_like(mask_np, dtype=np.uint8)
+    for c in rare_classes:
+        rare_mask[mask_np == c] = 255
+    
+    contours, _ = cv2.findContours(rare_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        cv2.rectangle(rgb_img, (x, y), (x + w, y + h), (255, 0, 0), 2)  # Red box
+    return rgb_img
+
+
 def visualize_cutmix(mask1_before, mask1_after, mask2, color_map=None, box=None):
     """
     Visualize the result of CutMix showing the swapped region.
@@ -112,20 +125,14 @@ def visualize_cutmix(mask1_before, mask1_after, mask2, color_map=None, box=None)
     plt.axis('off')
 
     plt.subplot(1, 3, 2)
-    plt.imshow(mask2_rgb)
-    plt.title("Cut Patch From Second Mask")
+    mask2_rgb_box = draw_rare_box(mask2, mask2_rgb.copy(), rare_classes=[2, 3, 4])
+    plt.imshow(mask2_rgb_box)
+    plt.title("Cut Patch")
     plt.axis('off')
 
     plt.subplot(1, 3, 3)
     plt.imshow(mask1_after_rgb)
     plt.title("Updated Mask (After CutMix)")
-
-    # --- Draw rectangle for the cut region ---
-    if box is not None:
-        cx, cy, w, h = box
-        rect = plt.Rectangle((cx, cy), w, h, linewidth=2, edgecolor='red', facecolor='none')
-        plt.gca().add_patch(rect)
-        plt.text(cx, cy - 5, 'Cut region', color='red', fontsize=10, backgroundcolor='white')
 
     plt.axis('off')
     plt.tight_layout()
