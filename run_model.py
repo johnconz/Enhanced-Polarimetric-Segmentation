@@ -90,7 +90,7 @@ def save_and_log_vector_plot(
     """
     #Path(save_dir).mkdir(parents=True, exist_ok=True)
 
-    # --- 1️⃣ Plot locally with Seaborn ---
+    # Plot locally with seaborn
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(x=labels, y=values.squeeze(), ax=ax, palette="viridis")
     ax.set_xlabel(xaxis)
@@ -99,12 +99,12 @@ def save_and_log_vector_plot(
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
 
-    # --- 2️⃣ Save locally ---
+    # Save locally
     save_path = Path(save_dir) / f"{title.replace(' ', '_').lower()}.png"
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"[INFO] Saved vector figure to {save_path}")
 
-    # --- 3️⃣ Log to ClearML ---
+    # Log to ClearML
     logger.report_vector(
         title=title,
         series=series,
@@ -283,13 +283,13 @@ def train_model(args, model, dataloader, device, val_dataloader=None, model_name
                 best_val_miou = val_miou
                 early_stop_counter = 0  # reset counter
                 torch.save(model.state_dict(), f"{model_name}-best-miou-model.pt")
-                print(f"✅ Saved new best model (foreground mIoU: {best_val_miou:.4f})")
+                print(f"Saved new best model (foreground mIoU: {best_val_miou:.4f})")
             else:
                 early_stop_counter += 1
-                print(f"⏸️ No significant improvement in mIoU. Early stop counter: {early_stop_counter}/{early_stop_patience}")
+                print(f"No significant improvement in mIoU. Early stop counter: {early_stop_counter}/{early_stop_patience}")
 
             if early_stop_counter >= early_stop_patience:
-                print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+                print(f"Early stopping triggered after {epoch+1} epochs")
                 break
 
 
