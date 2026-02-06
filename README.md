@@ -1,7 +1,11 @@
 # Geometrically-Enhanced Polarimetric Image Fusion
 
 Code, data processing pipeline, and experiments accompanying my Master's thesis:  
-**"Geometrically-Enhanced Polarimetric Image Fusion as an Alternative to RGB Imaging for Object Segmentation"**
+**Geometrically-Enhanced Polarimetric Image Fusion as an Alternative to RGB Imaging for Object Segmentation.**
+
+---
+
+## Summary
 
 Polarization is a property of light describing the orientation of its electric field relative to the light's path; polarimetric imaging captures this by measuring how light is reflected off objects. This thesis involved the creation of a custom polarimetric dataset and Python lazy loading framework to support piecewise data preprocessing. It also puts forth unique polarization products for training and evaluation of the data on a state-of-the-art state-space object segmentation model. 
 
