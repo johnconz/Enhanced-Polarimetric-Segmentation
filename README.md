@@ -8,7 +8,7 @@ Code, data processing pipeline, and experiments accompanying my Master's thesis:
 Polarization is a property of light describing the orientation of its electric field relative to the light's path; polarimetric imaging captures this by measuring how light is reflected off objects. 
 
 This thesis involved the creation of a custom polarimetric dataset and Python lazy loading framework to support piecewise data preprocessing. It also puts forth unique polarization products for training and evaluation of the data on a state-of-the-art state-space object segmentation model. 
-
+<br>
 ### Thesis
 
 The full thesis is available here:
@@ -32,7 +32,7 @@ The polarimetric dataset used in this work is publically available at:
 The dataset utilizes a custom `.ASL` file format. It includes 4608 Stokes vector images comprising 8 different scenarios, 128 unique scene views each with 36 different illumination geometries. 
 
 For more information about the dataset alongside MATLAB source code for using it, see the above link.
-
+<br>
 ### Using the Dataset
 
 **Step 1**: Download the dataset (Polarimetric Data: Scenario 01 ... Scenario 08) from https://doi.org/10.26890/vfeb3620.
@@ -45,7 +45,7 @@ For more information about the dataset alongside MATLAB source code for using it
 git clone --branch data-reader --single-branch https://github.com/johnconz/Enhanced-Polarimetric-Segmentation.git
 cd Enhanced-Polarimetric-Segmenation
 ```
---
+---
 
 ## Project Structure
 
