@@ -9,9 +9,7 @@ Polarization is a property of light describing the orientation of its electric f
 
 This thesis involved the creation of a custom polarimetric dataset and Python lazy loading framework to support piecewise data preprocessing. It also puts forth unique polarization products for training and evaluation of the data on a state-of-the-art state-space object segmentation model. 
 
----
-
-## Thesis
+### Thesis
 
 The full thesis is available here:
 
@@ -35,9 +33,7 @@ The dataset utilizes a custom `.ASL` file format. It includes 4608 Stokes vector
 
 For more information about the dataset alongside MATLAB source code for using it, see the above link.
 
----
-
-## Using the Dataset
+### Using the Dataset
 
 **Step 1**: Download the dataset (Polarimetric Data: Scenario 01 ... Scenario 08) from https://doi.org/10.26890/vfeb3620.
 
@@ -49,15 +45,14 @@ For more information about the dataset alongside MATLAB source code for using it
 git clone --branch data-reader --single-branch https://github.com/johnconz/Enhanced-Polarimetric-Segmentation.git
 cd Enhanced-Polarimetric-Segmenation
 ```
+--
 
-## Branches
+## Project Structure
 
 This repository uses two separate branches to isolate stable thesis code utilizing a custom environment with many packages from the base Python framework and reader.
 
 - `main` – Final thesis code
 - `data-reader` – Standalone Python polarimetric data reader and lazy loading framework
-
----
 
 ## Results
 
@@ -68,6 +63,8 @@ The dataset was evaluated on a variation of the **Ultralight VM-UNet** architect
 
 ... under two paradigms: RGB-like 3-channel fusions and variable modality tensors.
 
-It was found that through both methods, the custom products **outperformed** traditional polarimetric ones and **achieved effective per-class IoU**. This puts forth polarimetric imaging as a promising path forward in place of traditional RGB data for certain tasks. I plan to complete further experimentation and directly compare polarimetric versus visible-band training and evaluation and foray into testing with other sensing bands like SWIR.
+It was found that through both methods, the custom products **outperformed** traditional polarimetric ones and **achieved effective per-class IoU**. 
+
+These results emphasize polarimetric imaging as a promising path forward in place of traditional RGB data for certain tasks. I plan to complete further experimentation and directly compare polarimetric versus visible-band training and evaluation, including possible testing with other sensing bands like SWIR.
 
 
