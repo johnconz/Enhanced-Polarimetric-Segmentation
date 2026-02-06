@@ -31,7 +31,7 @@ The polarimetric dataset used in this work is publically available at:
 - **Dataset Archive**:  
   → https://doi.org/10.26890/vfeb3620
 
-The dataset utilizes a custom file format: `.ASL`--- and 4608 Stokes vector images comprising 8 different scenarios, 128 unique scene views each with 36 different illumination geometries. 
+The dataset utilizes a custom `.ASL` file format. It includes 4608 Stokes vector images comprising 8 different scenarios, 128 unique scene views each with 36 different illumination geometries. 
 
 For more information about the dataset alongside MATLAB source code for using it, see the above link.
 
