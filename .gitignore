@@ -2,3 +2,5 @@
 *.npz
 *.pt
 *.pt.lock
+__pycache__/
+old_experiments/
